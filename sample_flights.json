@@ -1,0 +1,98 @@
+{
+  "search_metadata": {
+    "google_flights_url": "https://www.google.com/travel/flights?hl=en"
+  },
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"name": "San Diego International Airport", "id": "SAN", "time": "2026-09-10 07:15"},
+          "arrival_airport": {"name": "John F. Kennedy International Airport", "id": "JFK", "time": "2026-09-10 15:40"},
+          "duration": 325,
+          "airplane": "Boeing 737MAX 9",
+          "airline": "Alaska Airlines",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/AS.png",
+          "flight_number": "AS 1024",
+          "legroom": "31 in",
+          "extensions": ["Wi-Fi for a fee", "In-seat power outlet", "Stream media to your device"]
+        },
+        {
+          "departure_airport": {"name": "John F. Kennedy International Airport", "id": "JFK", "time": "2026-09-10 18:30"},
+          "arrival_airport": {"name": "Paris Charles de Gaulle Airport", "id": "CDG", "time": "2026-09-11 08:05"},
+          "duration": 455,
+          "airplane": "Airbus A330-900neo",
+          "airline": "Delta",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+          "flight_number": "DL 264",
+          "legroom": "31 in",
+          "extensions": ["Wi-Fi for a fee", "In-seat power & USB outlets", "On-demand video"]
+        }
+      ],
+      "layovers": [
+        {"name": "John F. Kennedy International Airport", "id": "JFK", "duration": 170}
+      ],
+      "total_duration": 950,
+      "price": 684,
+      "type": "Round trip",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/multi.png",
+      "carbon_emissions": {"this_flight": 512000, "typical_for_this_route": 545000, "difference_percent": -6}
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": {"name": "San Diego International Airport", "id": "SAN", "time": "2026-09-10 11:55"},
+          "arrival_airport": {"name": "Paris Charles de Gaulle Airport", "id": "CDG", "time": "2026-09-11 07:45"},
+          "duration": 650,
+          "airplane": "Airbus A350-900",
+          "airline": "French Bee",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/BF.png",
+          "flight_number": "BF 711",
+          "legroom": "32 in",
+          "extensions": ["Wi-Fi for a fee", "USB outlet", "On-demand video"]
+        }
+      ],
+      "layovers": [],
+      "total_duration": 650,
+      "price": 812,
+      "type": "Round trip",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/BF.png",
+      "carbon_emissions": {"this_flight": 447000, "typical_for_this_route": 545000, "difference_percent": -18}
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"name": "San Diego International Airport", "id": "SAN", "time": "2026-09-10 09:20"},
+          "arrival_airport": {"name": "London Heathrow Airport", "id": "LHR", "time": "2026-09-11 04:10"},
+          "duration": 610,
+          "airplane": "Boeing 777-300ER",
+          "airline": "British Airways",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/BA.png",
+          "flight_number": "BA 272",
+          "legroom": "31 in",
+          "extensions": ["Wi-Fi for a fee", "In-seat power outlet", "On-demand video"]
+        },
+        {
+          "departure_airport": {"name": "London Heathrow Airport", "id": "LHR", "time": "2026-09-11 07:20"},
+          "arrival_airport": {"name": "Paris Charles de Gaulle Airport", "id": "CDG", "time": "2026-09-11 09:45"},
+          "duration": 85,
+          "airplane": "Airbus A320neo",
+          "airline": "British Airways",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/BA.png",
+          "flight_number": "BA 306",
+          "legroom": "30 in",
+          "extensions": ["Wi-Fi for a fee"]
+        }
+      ],
+      "layovers": [
+        {"name": "London Heathrow Airport", "id": "LHR", "duration": 190}
+      ],
+      "total_duration": 885,
+      "price": 758,
+      "type": "Round trip",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/BA.png",
+      "carbon_emissions": {"this_flight": 601000, "typical_for_this_route": 545000, "difference_percent": 10}
+    }
+  ]
+}
