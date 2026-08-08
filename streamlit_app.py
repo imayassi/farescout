@@ -1,11 +1,11 @@
 """
-✈️ Flight Finder — Streamlit UI over the shared flight_search module.
+🧭 FareScout — flight + hotel search UI over the shared travel_search module.
 
 Run with:
     streamlit run streamlit_app.py
 
-API keys come from environment variables (SEARCHAPI_API_KEY / SERPAPI_API_KEY /
-OPENAI_API_KEY) or can be pasted in the sidebar. Never hardcode keys here.
+API keys come from Streamlit secrets or environment variables (SEARCHAPI_API_KEY /
+SERPAPI_API_KEY / OPENAI_API_KEY) or can be pasted in the sidebar. Never hardcode keys.
 """
 
 import datetime
@@ -15,21 +15,27 @@ from pathlib import Path
 
 import streamlit as st
 
-from flight_search import (
+from travel_search import (
     TRAVEL_CLASSES,
-    FlightAgent,
     FlightSearchError,
+    TravelAgent,
     booking_link,
     extract_flights,
+    extract_hotels,
     filter_flights,
+    filter_hotels,
     format_minutes_to_hm,
+    hotel_price_per_night,
     rank_flights,
+    rank_hotels,
     search_flights,
+    search_hotels,
 )
 
-st.set_page_config(page_title="Flight Finder", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="FareScout", page_icon="🧭", layout="wide")
 
 SAMPLE_DATA_PATH = Path(__file__).parent / "sample_flights.json"
+SAMPLE_HOTELS_PATH = Path(__file__).parent / "sample_hotels.json"
 
 
 _SECRETS_PATHS = (
@@ -78,7 +84,7 @@ with st.sidebar:
         help="Renders bundled sample results without calling any API. Great for trying the UI.",
     )
 
-    provider = st.selectbox("Flight data provider", ["searchapi", "serpapi"], disabled=demo_mode)
+    provider = st.selectbox("Travel data provider", ["searchapi", "serpapi"], disabled=demo_mode)
     env_key = get_secret("SEARCHAPI_API_KEY" if provider == "searchapi" else "SERPAPI_API_KEY")
     search_key = st.text_input(
         f"{provider} API key",
@@ -162,15 +168,51 @@ def render_flight_card(option: dict, rank: int, link: str | None) -> None:
             st.link_button("🔗 Book on Google Flights", link)
 
 
+def render_hotel_card(hotel: dict, rank: int) -> None:
+    name = hotel.get("name", "Unknown property")
+    rating = hotel.get("overall_rating")
+    reviews = hotel.get("reviews")
+    stars = hotel.get("extracted_hotel_class")
+    price = hotel_price_per_night(hotel)
+    total = hotel.get("total_rate", {}).get("extracted_lowest")
+
+    with st.container(border=True):
+        head_l, head_r = st.columns([4, 1])
+        with head_l:
+            st.markdown(f"**#{rank} · {name}**" + (f" · {'⭐' * int(stars)}" if stars else ""))
+            bits = []
+            if rating:
+                bits.append(f"{rating}/5" + (f" ({reviews:,} reviews)" if reviews else ""))
+            if hotel.get("check_in_time"):
+                bits.append(f"check-in {hotel['check_in_time']}")
+            if bits:
+                st.caption(" · ".join(bits))
+        with head_r:
+            st.metric("Per night", f"${price:,.0f}" if price else "N/A")
+            if total:
+                st.caption(f"${total:,.0f} total")
+
+        if hotel.get("amenities"):
+            st.caption(" · ".join(hotel["amenities"][:8]))
+        if hotel.get("link"):
+            st.link_button("🔗 View / book", hotel["link"])
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def cached_search(**kwargs) -> dict:
     return search_flights(**kwargs)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_hotel_search(**kwargs) -> dict:
+    return search_hotels(**kwargs)
+
+
 # --------------------------- Tabs ---------------------------
 
-st.title("✈️ Flight Finder")
-tab_search, tab_agent = st.tabs(["🔍 Flight Search", "🤖 AI Agent"])
+st.title("🧭 FareScout")
+st.caption("Scouting the best fares — flights, hotels, and complete trips.")
+tab_search, tab_hotels, tab_agent = st.tabs(["✈️ Flights", "🏨 Hotels", "🤖 AI Agent"])
 
 
 with tab_search:
@@ -262,15 +304,84 @@ with tab_search:
                 st.error(f"Flight search failed: {e}")
 
 
+with tab_hotels:
+    with st.form("hotel_form"):
+        h1, h2, h3 = st.columns([3, 2, 2])
+        today = datetime.date.today()
+        with h1:
+            hotel_q = st.text_input("Destination", "Paris", help="City, neighborhood, or landmark — e.g. 'hotels near the Marais, Paris'")
+        with h2:
+            check_in = st.date_input("Check-in", today + datetime.timedelta(days=30), min_value=today)
+        with h3:
+            check_out = st.date_input("Check-out", today + datetime.timedelta(days=33), min_value=today)
+
+        h4, h5, h6, h7 = st.columns(4)
+        with h4:
+            h_adults = st.number_input("Adults", 1, 8, 2, key="hotel_adults")
+        with h5:
+            h_children = st.number_input("Children", 0, 8, 0, key="hotel_children")
+        with h6:
+            min_rating = st.select_slider("Min guest rating", [0.0, 3.0, 3.5, 4.0, 4.5], value=4.0)
+        with h7:
+            max_night = st.number_input("Max $/night (0 = no limit)", 0, 5000, 0, step=25)
+
+        h8, h9 = st.columns(2)
+        with h8:
+            hotel_sort = st.selectbox("Sort by", ["Best value", "Lowest price", "Best rating"])
+        with h9:
+            hotel_top_n = st.slider("Show top N hotels", 1, 15, 8)
+
+        hotels_submitted = st.form_submit_button("Search hotels", type="primary", use_container_width=True)
+
+    if hotels_submitted:
+        if check_out <= check_in:
+            st.error("Check-out must be after check-in.")
+        elif not hotel_q.strip():
+            st.error("Enter a destination.")
+        else:
+            try:
+                if demo_mode:
+                    hotel_data = json.loads(SAMPLE_HOTELS_PATH.read_text())
+                    st.info("Demo mode is on — showing bundled sample results.", icon="🧪")
+                else:
+                    with st.spinner("Searching hotels…"):
+                        hotel_data = cached_hotel_search(
+                            q=hotel_q,
+                            check_in_date=check_in.strftime("%Y-%m-%d"),
+                            check_out_date=check_out.strftime("%Y-%m-%d"),
+                            adults=int(h_adults),
+                            children=int(h_children),
+                            provider=provider,
+                            api_key=search_key or None,
+                        )
+
+                hotels = filter_hotels(
+                    extract_hotels(hotel_data),
+                    min_rating=min_rating or None,
+                    max_price_per_night=max_night or None,
+                )
+                if not hotels:
+                    st.warning("No hotels matched your filters. Try lowering the rating floor or raising the price cap.")
+                else:
+                    sort_key = {"Best value": "value", "Lowest price": "price", "Best rating": "rating"}[hotel_sort]
+                    ranked = rank_hotels(hotels, sort_key)[:hotel_top_n]
+                    st.subheader(f"{len(ranked)} propert{'y' if len(ranked) == 1 else 'ies'} · sorted by {hotel_sort.lower()}")
+                    for i, h in enumerate(ranked, 1):
+                        render_hotel_card(h, i)
+            except FlightSearchError as e:
+                st.error(f"Hotel search failed: {e}")
+
+
 with tab_agent:
     st.markdown(
         "Describe a trip in plain language — the agent decomposes complex queries "
-        "(flexible dates, multiple airports, mixed cabin classes, budgets) into "
-        "individual searches and synthesizes an itinerary."
+        "(flexible dates, multiple airports, mixed cabin classes, hotels, budgets) "
+        "into individual searches and synthesizes a complete trip."
     )
     st.caption(
-        'Example: "LAX or SAN to Madrid Dec 13–15 in business, return CDG to LAX '
-        'Jan 2–4 in economy, total under $10,000."'
+        'Example: "LAX or SAN to Madrid Dec 13–15 in business, return Jan 2–4 in '
+        'economy, plus a 4-star hotel near the city center under $250/night — '
+        'flights and hotel under $10,000 total."'
     )
 
     if "agent_chat" not in st.session_state:
@@ -311,7 +422,7 @@ with tab_agent:
                         status.markdown(f"```\n{text}\n```")
 
                 try:
-                    agent = FlightAgent(
+                    agent = TravelAgent(
                         model=agent_model,
                         provider=provider,
                         search_api_key=search_key,

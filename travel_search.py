@@ -1,6 +1,6 @@
 """
-Core flight-search logic shared by the Streamlit UI (travel_agent.py)
-and the notebook (travel agent.ipynb).
+Core travel-search logic (Google Flights + Google Hotels) shared by the
+FareScout Streamlit UI (travel_agent.py) and the notebook (travel agent.ipynb).
 
 Supports two providers with near-identical Google Flights schemas:
   - searchapi.io  (https://www.searchapi.io/api/v1/search)
@@ -221,8 +221,8 @@ def summarize_for_llm(search_params: dict, data: dict, top_n: int = 5) -> str:
 # --------------------------- The AI agent ---------------------------
 
 AGENT_SYSTEM_PROMPT = """
-You are an expert flight search agent. Your goal is to find the best flight options
-for the user, even when the query is complex.
+You are FareScout, an expert travel agent. Your goal is to find the best flight
+and hotel options for the user, even when the query is complex.
 
 **Your core task is to DECOMPOSE complex queries.**
 
@@ -231,17 +231,25 @@ A complex query has one or more of:
 - Flexible dates (e.g., "anytime between 12/13 and 12/15")
 - Flexible airports (e.g., "to LAX or SAN")
 - Mixed travel classes (e.g., "outbound business, return economy")
-- Budget constraints (e.g., "under $10000")
+- Hotel requirements (e.g., "4-star near the Marais under $250/night")
+- Budget constraints (e.g., "under $10000 total for flights and hotel")
 
 **Your method:**
-1. Reason: state your plan, breaking the query into simple one-way searches.
-2. Act: call `google_flights_search` for EACH simple leg — once per date for
-   flexible dates, once per airport for flexible airports, with the right
-   `travel_class` per segment.
+1. Reason: state your plan, breaking the query into simple searches.
+2. Act: call `google_flights_search` for EACH simple flight leg — once per date
+   for flexible dates, once per airport for flexible airports, with the right
+   `travel_class` per segment — and `google_hotels_search` for each lodging need
+   (derive check-in/check-out from the chosen or likely flight dates).
 3. Observe the summarized results of each call.
-4. Synthesize: combine the best options (e.g., cheapest outbound + best return).
-5. Filter against the user's constraints (e.g., total budget).
-6. Answer with the final itinerary, per-leg prices, total price, and booking links.
+4. Synthesize: combine the best options (e.g., cheapest outbound + best return
+   + best-value hotel that satisfies the stated requirements).
+5. Filter against the user's constraints, including TOTAL trip budget across
+   flights and hotel nights.
+6. Answer with the final itinerary: per-leg flight prices, hotel name and
+   nightly/total rate, combined total, and booking links.
+
+If the user asks about car rentals, say you can't search them live and offer a
+pre-filled link of the form https://www.kayak.com/cars/<CITY>/<YYYY-MM-DD>/<YYYY-MM-DD>.
 
 Keep tool calls focused: never issue more than ~12 searches for one query; if the
 query would need more, search the most promising subset and say what you skipped.
@@ -273,12 +281,30 @@ AGENT_TOOL_SPEC = [
                 "required": ["departure_id", "arrival_id", "outbound_date"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "google_hotels_search",
+            "description": "Searches Google Hotels for places to stay in a location and date range.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "q": {"type": "string", "description": "Location query, e.g. 'hotels near the Marais, Paris'."},
+                    "check_in_date": {"type": "string", "description": "Check-in date, YYYY-MM-DD."},
+                    "check_out_date": {"type": "string", "description": "Check-out date, YYYY-MM-DD."},
+                    "adults": {"type": "integer", "minimum": 1},
+                    "children": {"type": "integer", "minimum": 0},
+                },
+                "required": ["q", "check_in_date", "check_out_date"],
+            },
+        },
+    },
 ]
 
 
-class FlightAgent:
-    """OpenAI tool-calling loop around search_flights.
+class TravelAgent:
+    """OpenAI tool-calling loop over flight and hotel search.
 
     on_event, if given, receives (kind, text) progress callbacks with kinds:
     'thinking', 'tool_call', 'tool_result', 'answer'. This lets the Streamlit
@@ -303,12 +329,27 @@ class FlightAgent:
         self.max_rounds = max_rounds
         self.on_event = on_event or (lambda kind, text: None)
 
-    def _search_tool(self, **kwargs) -> str:
+    def _flight_tool(self, **kwargs) -> str:
         try:
             data = search_flights(provider=self.provider, api_key=self.search_api_key, **kwargs)
             return summarize_for_llm(kwargs, data)
         except FlightSearchError as e:
             return f"Error: {e}"
+
+    def _hotel_tool(self, **kwargs) -> str:
+        try:
+            data = search_hotels(provider=self.provider, api_key=self.search_api_key, **kwargs)
+            return summarize_hotels_for_llm(kwargs, data)
+        except FlightSearchError as e:
+            return f"Error: {e}"
+
+    def _describe_call(self, name: str, args: dict) -> str:
+        if name == "google_hotels_search":
+            return f"🏨 {args.get('q')} · {args.get('check_in_date')} → {args.get('check_out_date')}"
+        return (
+            f"✈️ {args.get('departure_id')} → {args.get('arrival_id')} on {args.get('outbound_date')}"
+            + (f" ({args['travel_class']})" if args.get("travel_class") else "")
+        )
 
     def run(self, user_query: str) -> str:
         """Runs the agent loop and returns the final answer text."""
@@ -341,12 +382,12 @@ class FlightAgent:
                 except json.JSONDecodeError as e:
                     result = f"Error: could not parse arguments: {e}"
                 else:
-                    self.on_event(
-                        "tool_call",
-                        f"{args.get('departure_id')} → {args.get('arrival_id')} on {args.get('outbound_date')}"
-                        + (f" ({args['travel_class']})" if args.get("travel_class") else ""),
-                    )
-                    result = self._search_tool(**args)
+                    self.on_event("tool_call", self._describe_call(call.function.name, args))
+                    tool_fn = {
+                        "google_flights_search": self._flight_tool,
+                        "google_hotels_search": self._hotel_tool,
+                    }.get(call.function.name)
+                    result = tool_fn(**args) if tool_fn else f"Error: unknown tool {call.function.name}"
                 self.on_event("tool_result", result)
                 messages.append(
                     {"tool_call_id": call.id, "role": "tool", "name": call.function.name, "content": result}
@@ -355,3 +396,136 @@ class FlightAgent:
         final = "I ran out of search rounds before finishing. Here's what I found so far — try narrowing the query."
         self.on_event("answer", final)
         return final
+
+
+# --------------------------- Hotels ---------------------------
+
+def search_hotels(
+    q: str,
+    check_in_date: str,
+    check_out_date: str,
+    adults: int = 2,
+    children: int = 0,
+    provider: str = "searchapi",
+    api_key: Optional[str] = None,
+) -> dict:
+    """Calls the Google Hotels engine and returns the raw JSON payload.
+
+    q is a location query, e.g. "hotels near the Marais, Paris".
+    Raises FlightSearchError on transport failures or API-level errors.
+    """
+    if provider not in PROVIDER_ENDPOINTS:
+        raise FlightSearchError(f"Unknown provider '{provider}'. Use one of {list(PROVIDER_ENDPOINTS)}.")
+
+    if api_key is None:
+        env_var = "SEARCHAPI_API_KEY" if provider == "searchapi" else "SERPAPI_API_KEY"
+        api_key = os.environ.get(env_var, "")
+    if not api_key:
+        raise FlightSearchError(
+            f"No API key for {provider}. Set the environment variable or pass api_key explicitly."
+        )
+
+    params: dict[str, Any] = {
+        "engine": "google_hotels",
+        "q": q,
+        "check_in_date": check_in_date,
+        "check_out_date": check_out_date,
+        "adults": adults,
+        "hl": "en",
+        "currency": "USD",
+        "api_key": api_key,
+    }
+    if children:
+        params["children"] = children
+
+    try:
+        response = requests.get(PROVIDER_ENDPOINTS[provider], params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as e:
+        raise FlightSearchError(f"Failed to reach {provider}: {e}") from e
+    except ValueError as e:
+        raise FlightSearchError(f"{provider} returned a non-JSON response: {e}") from e
+
+    if "error" in data:
+        raise FlightSearchError(f"{provider} error: {data['error']}")
+    return data
+
+
+def extract_hotels(data: dict) -> list[dict]:
+    """Returns the property list from a raw Google Hotels payload."""
+    return list(data.get("properties", []))
+
+
+def hotel_price_per_night(hotel: dict) -> Optional[float]:
+    """Best-effort numeric nightly rate from a property record."""
+    return hotel.get("rate_per_night", {}).get("extracted_lowest")
+
+
+def filter_hotels(
+    hotels: list[dict],
+    min_rating: Optional[float] = None,
+    max_price_per_night: Optional[float] = None,
+    min_hotel_class: Optional[int] = None,
+) -> list[dict]:
+    """Client-side filtering of Google Hotels properties."""
+    out = []
+    for h in hotels:
+        if min_rating and (h.get("overall_rating") or 0) < min_rating:
+            continue
+        price = hotel_price_per_night(h)
+        if max_price_per_night and price is not None and price > max_price_per_night:
+            continue
+        if min_hotel_class and (h.get("extracted_hotel_class") or h.get("hotel_class") or 0) and \
+                int(h.get("extracted_hotel_class") or 0) < min_hotel_class:
+            continue
+        out.append(h)
+    return out
+
+
+def rank_hotels(hotels: list[dict], sort_by: str = "value") -> list[dict]:
+    """Sorts properties by 'price', 'rating', or a blended 'value' score."""
+    if sort_by == "price":
+        return sorted(hotels, key=lambda h: hotel_price_per_night(h) or 10**6)
+    if sort_by == "rating":
+        return sorted(hotels, key=lambda h: -(h.get("overall_rating") or 0))
+
+    priced = [hotel_price_per_night(h) or 10**6 for h in hotels]
+    if not priced:
+        return hotels
+    lo, hi = min(priced), max(priced)
+    rng = (hi - lo) or 1.0
+
+    def value_score(h: dict) -> float:
+        price_norm = ((hotel_price_per_night(h) or 10**6) - lo) / rng
+        rating_norm = (h.get("overall_rating") or 0) / 5.0
+        return 0.5 * price_norm - 0.5 * rating_norm
+
+    return sorted(hotels, key=value_score)
+
+
+def summarize_hotels_for_llm(search_params: dict, data: dict, top_n: int = 5) -> str:
+    """Condenses a raw hotels payload into a short string for the agent."""
+    hotels = extract_hotels(data)
+    if not hotels:
+        return f"No hotels found for '{search_params.get('q')}' ({search_params.get('check_in_date')})."
+
+    lines = [
+        f"Hotels for '{search_params.get('q')}', "
+        f"{search_params.get('check_in_date')} to {search_params.get('check_out_date')}:"
+    ]
+    for h in rank_hotels(hotels, "value")[:top_n]:
+        price = hotel_price_per_night(h)
+        total = h.get("total_rate", {}).get("extracted_lowest")
+        lines.append(
+            f"  - {h.get('name', '?')}: ${price or '?'}/night"
+            + (f" (${total} total)" if total else "")
+            + f", rating {h.get('overall_rating', '?')}/5 ({h.get('reviews', 0)} reviews)"
+            + (f", {h.get('extracted_hotel_class')}-star" if h.get("extracted_hotel_class") else "")
+            + (f" [Link: {h['link']}]" if h.get("link") else "")
+        )
+    return "\n".join(lines)
+
+
+# Backwards-compatible alias (pre-hotels name)
+FlightAgent = TravelAgent

@@ -1,0 +1,49 @@
+{
+  "search_metadata": {},
+  "properties": [
+    {
+      "name": "Hôtel des Grands Boulevards",
+      "extracted_hotel_class": 4,
+      "overall_rating": 4.5,
+      "reviews": 1284,
+      "check_in_time": "3:00 PM",
+      "rate_per_night": {"lowest": "$243", "extracted_lowest": 243},
+      "total_rate": {"lowest": "$729", "extracted_lowest": 729},
+      "amenities": ["Free Wi-Fi", "Restaurant", "Bar", "Air conditioning", "Room service", "Breakfast"],
+      "link": "https://www.google.com/travel/hotels"
+    },
+    {
+      "name": "Le Pavillon de la Reine",
+      "extracted_hotel_class": 5,
+      "overall_rating": 4.7,
+      "reviews": 862,
+      "check_in_time": "3:00 PM",
+      "rate_per_night": {"lowest": "$412", "extracted_lowest": 412},
+      "total_rate": {"lowest": "$1,236", "extracted_lowest": 1236},
+      "amenities": ["Free Wi-Fi", "Spa", "Fitness centre", "Bar", "Air conditioning", "Pet-friendly"],
+      "link": "https://www.google.com/travel/hotels"
+    },
+    {
+      "name": "Hôtel Jeanne d'Arc Le Marais",
+      "extracted_hotel_class": 3,
+      "overall_rating": 4.3,
+      "reviews": 2140,
+      "check_in_time": "2:00 PM",
+      "rate_per_night": {"lowest": "$156", "extracted_lowest": 156},
+      "total_rate": {"lowest": "$468", "extracted_lowest": 468},
+      "amenities": ["Free Wi-Fi", "Air conditioning", "Breakfast", "Family rooms"],
+      "link": "https://www.google.com/travel/hotels"
+    },
+    {
+      "name": "Hôtel Le Compostelle",
+      "extracted_hotel_class": 3,
+      "overall_rating": 3.9,
+      "reviews": 645,
+      "check_in_time": "2:00 PM",
+      "rate_per_night": {"lowest": "$128", "extracted_lowest": 128},
+      "total_rate": {"lowest": "$384", "extracted_lowest": 384},
+      "amenities": ["Free Wi-Fi", "Air conditioning"],
+      "link": "https://www.google.com/travel/hotels"
+    }
+  ]
+}
