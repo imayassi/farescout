@@ -271,6 +271,7 @@ with tab_search:
                 sort_by = st.selectbox("Sort results by", list(SORT_PRESETS))
                 top_n = st.slider("Show top N results", 1, 10, 5)
 
+        st.caption("Airport not in the list? The 🤖 AI Agent tab understands any city or airport name.")
         submitted = st.form_submit_button("Search flights", type="primary", use_container_width=True)
 
     if submitted:
