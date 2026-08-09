@@ -15,6 +15,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from airports import AIRPORT_LABELS, LABEL_TO_CODE, label_for
 from travel_search import (
     TRAVEL_CLASSES,
     FlightSearchError,
@@ -219,9 +220,21 @@ with tab_search:
     with st.form("search_form"):
         c1, c2, c3 = st.columns([2, 2, 2])
         with c1:
-            from_city = st.text_input("From (IATA code)", "SAN", max_chars=3, help="e.g. SAN, LAX, JFK")
+            from_label = st.selectbox(
+                "From",
+                AIRPORT_LABELS,
+                index=AIRPORT_LABELS.index(label_for("SAN")),
+                help="Type a city name to search the list.",
+            )
         with c2:
-            to_city = st.text_input("To (IATA code)", "CDG", max_chars=3, help="e.g. CDG, LHR, MAD")
+            to_label = st.selectbox(
+                "To",
+                AIRPORT_LABELS,
+                index=AIRPORT_LABELS.index(label_for("CDG")),
+                help="Type a city name to search the list.",
+            )
+        from_city = LABEL_TO_CODE[from_label]
+        to_city = LABEL_TO_CODE[to_label]
         with c3:
             trip_type = st.radio("Trip", ["Round trip", "One way"], horizontal=True)
 
@@ -263,8 +276,8 @@ with tab_search:
     if submitted:
         if trip_type == "Round trip" and ret <= depart:
             st.error("Return date must be after the departure date.")
-        elif len(from_city.strip()) != 3 or len(to_city.strip()) != 3:
-            st.error("Airport codes must be 3-letter IATA codes (e.g. SAN, CDG).")
+        elif from_city == to_city:
+            st.error("Departure and arrival airports must be different.")
         else:
             try:
                 if demo_mode:
