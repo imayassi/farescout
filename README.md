@@ -45,3 +45,14 @@ keep the URL to yourself or enable viewer authentication in the app settings.
 - Car rentals aren't searchable through these providers; the agent offers a pre-filled
   Kayak link instead.
 - Flight prices are Google Flights snapshots — fares are confirmed on click-through.
+
+---
+
+## ExecOS (separate application in `exec-os/`)
+
+This repository also hosts **ExecOS**, a local-first, evidence-backed executive
+operating-intelligence layer (Windows desktop app built on GitHub Copilot CLI and WorkIQ MCP).
+It is independent of FareScout and has its own toolchain, installer and documentation:
+
+- [`exec-os/README.md`](exec-os/README.md) — install, run, everyday use
+- [`exec-os/ARCHITECTURE.md`](exec-os/ARCHITECTURE.md) — verified facts, design decisions, phases

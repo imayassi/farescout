@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# ExecOS — defense-in-depth ignore rules.
+# The PRIMARY privacy boundary is that runtime data lives OUTSIDE the repo
+# (%LOCALAPPDATA%\ExecOS). These rules exist so an accidental misconfiguration
+# still cannot commit private material.
+# ---------------------------------------------------------------------------
+
+# Build / deps
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Any local database, cache, or index
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.execos/
+cache/
+*.cache
+
+# Logs
+logs/
+*.log
+copilot-session-*.md
+usage-*.json
+
+# Real user configuration (only *.example.yaml is tracked)
+config/*.yaml
+config/*.yml
+config/*.json
+!config/*.example.yaml
+config/local-token
+
+# Repo-local private documents (README only)
+docs/local-docs/*
+!docs/local-docs/README.md
+
+# Copilot / MCP local config that may contain tenant details
+.mcp.json
+.github/mcp.json
+.copilot/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.pfx
+
+# OS
+.DS_Store
+Thumbs.db

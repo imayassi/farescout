@@ -1,0 +1,66 @@
+# ExecOS user configuration (sanitized template).
+# The installer copies this to %LOCALAPPDATA%\ExecOS\config\app.yaml.
+# Do NOT commit a real copy: it may name people, teams and internal terminology.
+
+user:
+  display_name: "Your Name"          # used for "Mine" filters
+  email: ""                          # optional; helps owner matching
+  role: "General Manager"            # free text; injected into prompts as context
+  team_members: []                   # names/emails used by the "My team" filter
+
+retention:
+  lookback_days: 90                  # source analysis window
+  journal_days: 30                   # default journal view
+  journal_keep_days: 180             # hard purge of journal entries
+  raw_text: trimmed                  # trimmed | full | none
+
+enabled_sources:
+  workiq: true
+  local_docs: true
+  powerbi: false
+  mock: false                        # synthetic data for demos/tests
+
+summaries:
+  daily: true
+  weekly: true
+  monthly: true
+  quarterly: false
+
+themes:
+  auto_discover: true
+  pinned:
+    - Forecast
+    - Budget
+    - AI
+    - People
+    - Customer
+
+terminology:                         # organization vocabulary the model should respect
+  MOR: "Monthly operations review"
+  ROB: "Rhythm of business"
+  QBR: "Quarterly business review"
+
+important_roles:                     # who decisions typically escalate to
+  - title: "Vice President"
+    name: ""
+  - title: "Finance partner"
+    name: ""
+
+intelligence:
+  backend: auto                      # auto | copilot-sdk | copilot-cli | mock
+  copilot:
+    command: copilot                 # or "agency" if your environment mandates a wrapper
+    args: []                         # extra args passed before "-p" in CLI mode
+    model: auto                      # model name or "auto"
+    reasoning_effort: medium
+    timeout_seconds: 240
+  batch:
+    max_items: 25
+    max_chars: 60000
+
+server:
+  port: 47810
+  open_window: true                  # open an Edge/Chrome app window on launch
+
+logging:
+  level: info                        # error | warn | info | debug

@@ -1,0 +1,40 @@
+# ExecOS provider configuration (sanitized template).
+# The installer copies this to %LOCALAPPDATA%\ExecOS\config\mcp.yaml.
+#
+# Each provider is either:
+#   type: mcp         an MCP server (stdio command or streamable HTTP url)
+#   type: local_docs  files in the private docs directory
+#   type: mock        synthetic organization for demos and tests
+#
+# For MCP providers, ExecOS discovers the server's tools at runtime and picks an
+# adapter by capability fingerprint. `adapter` can be set explicitly.
+
+providers:
+  - id: workiq
+    enabled: true
+    type: mcp
+    transport: stdio
+    command: npx
+    args: ["-y", "@microsoft/workiq@latest", "mcp"]
+    # args: ["-y", "@microsoft/workiq@latest", "mcp", "--account", "you@contoso.com"]
+    adapter: workiq
+    scopes: [mail, chat, calendar, files]
+    timeout_ms: 120000
+
+  - id: powerbi
+    enabled: false
+    type: mcp
+    transport: http
+    url: "https://example.invalid/mcp"      # replace with your Power BI MCP endpoint
+    adapter: generic
+    scopes: [metrics]
+
+  - id: local_docs
+    enabled: true
+    type: local_docs
+    # directory defaults to %LOCALAPPDATA%\ExecOS\docs ; override if needed
+    # directory: "C:\\Users\\you\\Documents\\ExecOS-context"
+
+  - id: mock
+    enabled: false
+    type: mock

@@ -1,0 +1,25 @@
+{
+  "name": "execos",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ExecOS — a local-first, evidence-backed executive operating intelligence layer",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/server",
+    "packages/ui"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @execos/core && npm run build -w @execos/server && npm run build -w @execos/ui",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "test": "npm run test -ws --if-present",
+    "start": "node packages/server/dist/cli.js start",
+    "doctor": "node packages/server/dist/cli.js doctor",
+    "sync": "node packages/server/dist/cli.js sync",
+    "delete-data": "node packages/server/dist/cli.js delete-data",
+    "dev:ui": "npm run dev -w @execos/ui"
+  }
+}
