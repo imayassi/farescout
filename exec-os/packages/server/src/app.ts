@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   applyFeedback, askWithEvidence, evidenceLabel, FeedbackKind, Horizon, daysAgo, saveAppConfig, createDataRequest, recordDelivery, DataRequestInput,
+  editObject, removeObject, createManualObject, NewObjectInput, editTheme, createTheme, ThemePatch, excludeEvidence, regenerateBucketSkill, editBucketSkill, EDITABLE, PLAYBOOK_MIN, BucketSkill,
   type ActionItem, type Decision, type Escalation, type Risk, type Recommendation, type DataRequest, type Signal, type BusinessMetric,
   type ObjectType, type Evidence, type EvidenceRef,
 } from "@execos/core";
@@ -186,8 +187,10 @@ export function createApp(rt: Runtime): FastifyInstance {
       const decisions = store.listObjects<Decision>({ type: "decision", theme_id: t.id });
       const escalations = store.listObjects<Escalation>({ type: "escalation", theme_id: t.id });
       const reqs = store.listObjects<DataRequest>({ type: "data_request", theme_id: t.id });
+      const sk = store.currentBucketSkill(t.id);
       return {
         ...t, counts, derived_from: { evidence: t.evidence.length, source_types: [...sources] },
+        playbook: sk ? { version: sk.version, status: sk.status, basis: sk.basis, user_adjusted: sk.user_adjusted, cadence: sk.cadence.review, owner: sk.owners.primary } : null,
         attention: {
           overdue: actions.filter((a) => !["completed", "dismissed"].includes(a.status) && a.due_at && a.due_at < now).length,
           decisions_needed: decisions.filter((d) => d.status === "needed" || d.status === "pending_approval").length,
@@ -208,6 +211,62 @@ export function createApp(rt: Runtime): FastifyInstance {
       data_request_endpoint: drCfg().endpoint_url || null,
     };
   });
+
+  /* ---- tab feedback loop: add / remove / adjust ---- */
+  app.patch("/api/object/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    const patch = z.record(z.string(), z.unknown()).parse(req.body ?? {});
+    const r = editObject(store, id, patch);
+    return { ok: true, type: r.type, changed: r.changed, object: withEvidence(r.object as unknown as Record<string, unknown>) };
+  });
+  app.delete("/api/object/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    const q = z.object({ reason: z.string().optional() }).parse(req.query ?? {});
+    return { ok: true, ...removeObject(store, id, q.reason) };
+  });
+  app.post("/api/objects", async (req, reply) => {
+    const input = NewObjectInput.parse(req.body);
+    const r = createManualObject(store, input, rt.config.app.user.display_name);
+    return reply.code(201).send({ ok: true, type: r.type, object: withEvidence(r.object as unknown as Record<string, unknown>) });
+  });
+  app.get("/api/editable", async () => EDITABLE);
+  app.post("/api/themes", async (req, reply) => {
+    const input = z.object({ name: z.string().min(2).max(80), description: z.string().max(1000).optional(), pinned: z.boolean().optional() }).parse(req.body);
+    return reply.code(201).send({ ok: true, theme: createTheme(store, input) });
+  });
+  app.patch("/api/themes/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    return { ok: true, theme: editTheme(store, id, ThemePatch.parse(req.body ?? {})) };
+  });
+  app.delete("/api/themes/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    return { ok: true, theme: editTheme(store, id, { hidden: true }) };
+  });
+  app.post("/api/evidence/:id/exclude", async (req) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ reason: z.string().optional() }).parse(req.body ?? {});
+    return { ok: true, ...excludeEvidence(store, id, body.reason) };
+  });
+
+  /* ---- bucket playbooks (generated once, then fixed) ---- */
+  const skillView = (sk: BucketSkill) => ({ ...sk, evidence_details: sk.evidence.map((r) => { const e = store.getEvidence(r.evidence_id); return e ? evidenceView(e, r) : undefined; }).filter(Boolean), minimums: PLAYBOOK_MIN });
+  app.get("/api/themes/:id/playbook", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const cur = store.currentBucketSkill(id);
+    if (!cur) return reply.code(404).send({ error: "no playbook yet; run a sync" });
+    return { playbook: skillView(cur), versions: store.listBucketSkillVersions(id).map((v) => ({ id: v.id, version: v.version, generated_at: v.generated_at, basis: v.basis, generated_by: v.generated_by, user_adjusted: v.user_adjusted })) };
+  });
+  app.post("/api/themes/:id/playbook/regenerate", async (req) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ reason: z.string().default("requested by user") }).parse(req.body ?? {});
+    return { ok: true, playbook: skillView(regenerateBucketSkill(store, id, rt.orchestrator.skillContext(), body.reason)) };
+  });
+  app.patch("/api/themes/:id/playbook", async (req) => {
+    const { id } = req.params as { id: string };
+    const patch = BucketSkill.partial().parse(req.body ?? {});
+    return { ok: true, playbook: skillView(editBucketSkill(store, id, patch)) };
+  });
+  app.get("/api/playbooks", async () => store.listThemes().map((t) => { const sk = store.currentBucketSkill(t.id); return { theme_id: t.id, name: t.name, playbook: sk ? { id: sk.id, version: sk.version, status: sk.status, basis: sk.basis, generated_by: sk.generated_by, user_adjusted: sk.user_adjusted, confidence: sk.confidence, cadence: sk.cadence.review, owner: sk.owners.primary } : null }; }));
 
   /* ---- feedback ---- */
   app.post("/api/feedback", async (req, reply) => {

@@ -61,7 +61,7 @@ export function runRules(store: Store, now: Date = new Date()): RuleRunResult {
       if (!already && !store.isSuppressed(fp)) {
         const esc: Escalation = {
           id: newId("esc"), created_at: nowIsoStr, updated_at: nowIsoStr, first_seen: nowIsoStr, last_observed: nowIsoStr, theme_id: a.theme_id,
-          epistemic: "potential_escalation", confidence: 0.7, evidence: a.evidence, hidden: false,
+          epistemic: "potential_escalation", confidence: 0.7, evidence: a.evidence, hidden: false, locked_fields: [],
           reasoning: `Commitment "${a.title}" is ${days} day(s) past due${a.owner ? ` (owner ${a.owner})` : " with no identifiable owner"} and has been chased ${a.mention_count} time(s) across ${providersOf(a.evidence).length} source type(s).`,
           issue: `Overdue commitment: ${a.title}`, why_needed: `Past due by ${days} day(s); downstream work depends on it.`, owner: a.owner, urgency: days > 14 ? "high" : "medium", status: "potential",
           related_action_ids: [a.id], recommended_resolution: `Ask ${a.owner ?? "the owner"} for a firm date or reassign; decide whether to escalate.`,

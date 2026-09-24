@@ -14,6 +14,9 @@ import { reconcileObservations } from "../intelligence/pipeline/reconcile.js";
 import { applyThemeHints, ensurePinnedThemes, refreshThemeStates } from "../intelligence/pipeline/themes.js";
 import { runRules } from "../intelligence/pipeline/rules.js";
 import { buildSummary } from "../intelligence/pipeline/summaries.js";
+import { ensureBucketSkills } from "../intelligence/pipeline/playbooks.js";
+import { Recommendation } from "../domain/index.js";
+import { newId } from "../util.js";
 import { daysAgo, nowIso } from "../util.js";
 
 export interface SyncStatus {
@@ -32,6 +35,7 @@ export interface SyncResult {
   providers: Array<{ id: string; status: "ok" | "partial" | "error" | "auth_required" | "unavailable"; items_seen: number; items_new: number; message?: string; notes?: string[] }>;
   batches: number; observations: number; created: number; updated: number;
   recommendations_created: number; escalations_created: number;
+  playbooks_generated?: number;
   summaries: Horizon[];
   backend: string; degraded: boolean;
 }
@@ -153,6 +157,20 @@ export class SyncOrchestrator {
     const rules = runRules(store, now);
     result.recommendations_created = rules.recommendations_created; result.escalations_created = rules.escalations_created;
     refreshThemeStates(store, daysAgo(7, now).toISOString());
+    /* ---------------- playbooks: generated once per bucket, then fixed ---------------- */
+    this.status.phase = "playbooks";
+    try {
+      const pb = await ensureBucketSkills(store, backend, ctx, logger);
+      result.playbooks_generated = pb.generated;
+      for (const themeId of pb.refresh_candidates) {
+        const t = store.getTheme(themeId); if (!t) continue;
+        const fp = `r8:${themeId}`;
+        if (store.isSuppressed(fp) || store.listObjects<Recommendation>({ type: "recommendation", includeHidden: true, limit: 1000 }).some((r) => r.fingerprint === fp)) continue;
+        const rec = Recommendation.parse({ id: newId("rec"), created_at: nowIso(), updated_at: nowIso(), first_seen: nowIso(), last_observed: nowIso(), theme_id: themeId, epistemic: "recommendation", confidence: 0.6, evidence: t.evidence.slice(0, 5), reasoning: `The playbook for "${t.name}" was fixed when the bucket had little history. There is now enough history to derive it from what actually happened. Playbooks are never regenerated automatically.`, recommendation: `Refresh the playbook for "${t.name}" now that history exists`, theme_ids: [themeId], suggested_next_step: "Open the bucket → Playbook → Regenerate, then review and adjust.", status: "proposed", rule: "R8", fingerprint: fp, hidden: false, locked_fields: [] });
+        store.upsertObject("recommendation", rec);
+        result.recommendations_created++;
+      }
+    } catch (e) { logger.error("playbook generation failed", { error: e }); partialReasons.push(`Playbook generation failed: ${(e as Error).message}`); }
 
     /* ---------------- ALIGN (summaries) ---------------- */
     this.status.phase = "summarize";

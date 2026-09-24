@@ -101,4 +101,15 @@ export const MIGRATIONS: string[] = [
 
   CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS bucket_skills (
+    id TEXT PRIMARY KEY, theme_id TEXT NOT NULL, version INTEGER NOT NULL, status TEXT NOT NULL,
+    generated_at TEXT NOT NULL, payload TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_bucket_skills_theme ON bucket_skills(theme_id, version);
+
+  CREATE TABLE IF NOT EXISTS excluded_evidence (
+    evidence_id TEXT PRIMARY KEY, content_hash TEXT, at TEXT NOT NULL, reason TEXT
+  );
+  `,
 ];

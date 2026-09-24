@@ -57,7 +57,7 @@ export function applyFeedback(store: Store, req: FeedbackRequest): { ok: boolean
     case "escalate": {
       if (type === "action") {
         const a = o as unknown as ActionItem;
-        const esc: Escalation = { id: newId("esc"), created_at: now, updated_at: now, first_seen: now, last_observed: now, theme_id: a.theme_id, epistemic: "potential_escalation", confidence: 1, evidence: a.evidence, hidden: false, reasoning: "Escalated by the user.", issue: a.title, why_needed: String(payload.reason ?? "Escalated by the user."), owner: a.owner, target_decision_maker: payload.target as string | undefined, urgency: (payload.urgency as Escalation["urgency"]) ?? "high", status: "active", related_action_ids: [a.id] };
+        const esc: Escalation = { id: newId("esc"), created_at: now, updated_at: now, first_seen: now, last_observed: now, theme_id: a.theme_id, epistemic: "potential_escalation", confidence: 1, evidence: a.evidence, hidden: false, locked_fields: [], reasoning: "Escalated by the user.", issue: a.title, why_needed: String(payload.reason ?? "Escalated by the user."), owner: a.owner, target_decision_maker: payload.target as string | undefined, urgency: (payload.urgency as Escalation["urgency"]) ?? "high", status: "active", related_action_ids: [a.id] };
         store.upsertObject("escalation", esc); a.status = "escalated"; a.escalation_id = esc.id; save();
         store.journal({ object_type: "escalation", object_id: esc.id, event: "detected", actor: "user", summary: esc.issue, evidence: esc.evidence });
         journal(title, undefined, { escalation_id: esc.id }); return { ok: true, message: "escalated", created_id: esc.id };
@@ -67,7 +67,7 @@ export function applyFeedback(store: Store, req: FeedbackRequest): { ok: boolean
     }
     case "is_decision": {
       const a = o as unknown as ActionItem;
-      const d: Decision = { id: newId("dec"), created_at: now, updated_at: now, first_seen: a.first_seen ?? now, last_observed: a.last_observed ?? now, theme_id: a.theme_id, epistemic: "recorded_decision", confidence: 1, evidence: a.evidence, hidden: false, reasoning: "Reclassified by the user.", topic: a.title, decision: a.description ?? "", decision_maker: a.owner, alternatives: [], status: (payload.status as Decision["status"]) ?? "recorded", downstream_action_ids: [], blocks: [] };
+      const d: Decision = { id: newId("dec"), created_at: now, updated_at: now, first_seen: a.first_seen ?? now, last_observed: a.last_observed ?? now, theme_id: a.theme_id, epistemic: "recorded_decision", confidence: 1, evidence: a.evidence, hidden: false, locked_fields: [], reasoning: "Reclassified by the user.", topic: a.title, decision: a.description ?? "", decision_maker: a.owner, alternatives: [], status: (payload.status as Decision["status"]) ?? "recorded", downstream_action_ids: [], blocks: [] };
       store.upsertObject("decision", d); o.hidden = true; save(); store.addAlias(a.id, d.id);
       store.journal({ object_type: "decision", object_id: d.id, event: "detected", actor: "user", summary: d.topic, evidence: d.evidence });
       journal(title, undefined, { decision_id: d.id }); return { ok: true, message: "converted to decision", created_id: d.id };
@@ -95,7 +95,7 @@ export function applyFeedback(store: Store, req: FeedbackRequest): { ok: boolean
     case "modify_recommendation": {
       const r = o as unknown as Recommendation; const before = { status: r.status };
       const text = req.kind === "modify_recommendation" ? String(payload.text ?? r.recommendation) : r.recommendation;
-      const a: ActionItem = { id: newId("act"), created_at: now, updated_at: now, first_seen: now, last_observed: now, theme_id: r.theme_ids[0], epistemic: "extracted_action", confidence: 1, evidence: r.evidence, hidden: false, reasoning: `Accepted from recommendation ${r.id} by the user.`, title: text, description: r.suggested_next_step, owner: String(payload.owner ?? r.suggested_owner ?? "") || undefined, stakeholders: [], due_at: payload.due_at as string | undefined, status: "confirmed", origin: "accepted_recommendation", is_commitment: true, mention_count: 1 };
+      const a: ActionItem = { id: newId("act"), created_at: now, updated_at: now, first_seen: now, last_observed: now, theme_id: r.theme_ids[0], epistemic: "extracted_action", confidence: 1, evidence: r.evidence, hidden: false, locked_fields: [], reasoning: `Accepted from recommendation ${r.id} by the user.`, title: text, description: r.suggested_next_step, owner: String(payload.owner ?? r.suggested_owner ?? "") || undefined, stakeholders: [], due_at: payload.due_at as string | undefined, status: "confirmed", origin: "accepted_recommendation", is_commitment: true, mention_count: 1 };
       store.upsertObject("action", a);
       r.status = req.kind === "accept_recommendation" ? "accepted" : "modified"; r.resulting_action_id = a.id; if (req.kind === "modify_recommendation") r.recommendation = text; save();
       store.journal({ object_type: "action", object_id: a.id, event: "accepted", actor: "user", summary: `Created from recommendation: ${text}`, evidence: a.evidence });

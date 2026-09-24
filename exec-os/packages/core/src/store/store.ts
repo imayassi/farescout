@@ -4,7 +4,7 @@ import path from "node:path";
 import { MIGRATIONS } from "./schema.js";
 import {
   Evidence, Theme, ActionItem, Decision, Escalation, Risk, Recommendation, DataRequest, Signal,
-  BusinessMetric, Summary, JournalEntry, Feedback, SyncState, Stakeholder,
+  BusinessMetric, Summary, JournalEntry, Feedback, SyncState, Stakeholder, BucketSkill,
   type EvidenceRef, type ObjectType, type Horizon,
 } from "../domain/index.js";
 import { newId, nowIso } from "../util.js";
@@ -87,7 +87,8 @@ export class Store {
 
   /* --------------------------- evidence ------------------------------- */
   /** Insert evidence unless an identical id or content hash already exists. Returns true if inserted. */
-  upsertEvidence(e: Evidence): { inserted: boolean; duplicateOf?: string } {
+  upsertEvidence(e: Evidence): { inserted: boolean; duplicateOf?: string; excluded?: boolean } {
+    if (this.isEvidenceExcluded(e.evidence_id, e.content_hash)) return { inserted: false, excluded: true };
     const byId = this.db.prepare("SELECT evidence_id FROM evidence WHERE evidence_id = ?").get(e.evidence_id) as Row | undefined;
     if (byId) return { inserted: false, duplicateOf: e.evidence_id };
     const byHash = this.db.prepare("SELECT evidence_id FROM evidence WHERE content_hash = ?").get(e.content_hash) as Row | undefined;
@@ -334,6 +335,46 @@ export class Store {
   listStakeholders(limit = 50): Stakeholder[] {
     const rows = this.db.prepare("SELECT payload FROM stakeholders").all() as Row[];
     return rows.map((r) => Stakeholder.parse(JSON.parse(String(r.payload)))).sort((a, b) => b.mention_count - a.mention_count).slice(0, limit);
+  }
+
+  /* --------------------------- bucket skills -------------------------- */
+  saveBucketSkill(sk: BucketSkill): void {
+    this.db.prepare("INSERT OR REPLACE INTO bucket_skills(id, theme_id, version, status, generated_at, payload) VALUES (?,?,?,?,?,?)")
+      .run(sk.id, sk.theme_id, sk.version, sk.status, sk.generated_at, JSON.stringify(sk));
+  }
+  currentBucketSkill(theme_id: string): BucketSkill | undefined {
+    const r = this.db.prepare("SELECT payload FROM bucket_skills WHERE theme_id = ? ORDER BY version DESC LIMIT 1").get(theme_id) as Row | undefined;
+    return r ? BucketSkill.parse(JSON.parse(String(r.payload))) : undefined;
+  }
+  listBucketSkillVersions(theme_id: string): BucketSkill[] {
+    return (this.db.prepare("SELECT payload FROM bucket_skills WHERE theme_id = ? ORDER BY version DESC").all(theme_id) as Row[]).map((r) => BucketSkill.parse(JSON.parse(String(r.payload))));
+  }
+
+  /* --------------------------- evidence exclusion --------------------- */
+  excludeEvidence(evidence_id: string, reason?: string): void {
+    const e = this.getEvidence(evidence_id);
+    this.db.prepare("INSERT OR REPLACE INTO excluded_evidence(evidence_id, content_hash, at, reason) VALUES (?,?,?,?)").run(evidence_id, e?.content_hash ?? null, nowIso(), reason ?? null);
+    this.db.prepare("DELETE FROM object_evidence WHERE evidence_id = ?").run(evidence_id);
+    this.db.prepare("DELETE FROM theme_evidence WHERE evidence_id = ?").run(evidence_id);
+    this.db.prepare("DELETE FROM evidence_fts WHERE evidence_id = ?").run(evidence_id);
+    this.db.prepare("DELETE FROM evidence WHERE evidence_id = ?").run(evidence_id);
+    // Also strip the reference from object payloads so provenance stays consistent.
+    const rows = this.db.prepare("SELECT id, type, payload FROM objects").all() as Row[];
+    for (const r of rows) {
+      const obj = JSON.parse(String(r.payload)) as { evidence?: EvidenceRef[] };
+      if (!obj.evidence?.some((x) => x.evidence_id === evidence_id)) continue;
+      obj.evidence = obj.evidence.filter((x) => x.evidence_id !== evidence_id);
+      this.db.prepare("UPDATE objects SET payload = ? WHERE id = ?").run(JSON.stringify(obj), String(r.id));
+    }
+    for (const t of this.listThemes(true)) {
+      if (!t.evidence.some((x) => x.evidence_id === evidence_id)) continue;
+      t.evidence = t.evidence.filter((x) => x.evidence_id !== evidence_id);
+      this.upsertTheme(t);
+    }
+  }
+  isEvidenceExcluded(evidence_id: string, content_hash?: string): boolean {
+    if (this.db.prepare("SELECT 1 FROM excluded_evidence WHERE evidence_id = ?").get(evidence_id)) return true;
+    return !!(content_hash && this.db.prepare("SELECT 1 FROM excluded_evidence WHERE content_hash = ?").get(content_hash));
   }
 
   /* ------------------------------ stats ------------------------------- */

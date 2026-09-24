@@ -4,7 +4,7 @@
  * from the private data directory and never written back into the repository.
  */
 import { z } from "zod";
-import { BatchAnalysis, EvidenceRef, EpistemicStatus, Recommendation } from "../../domain/index.js";
+import { BatchAnalysis, EvidenceRef, EpistemicStatus, Recommendation, BucketSkill } from "../../domain/index.js";
 
 export interface Skill<TIn, TOut> {
   name: string;
@@ -204,5 +204,42 @@ ${input.evidence.map((e) => `--- ${e.evidence_id} | ${e.source_type} | ${e.occur
   },
 };
 
-export const SKILLS = { analyzeBatch, generateRecommendations, summarize, answerWithEvidence } as const;
+/* ----------------------------------- generate_bucket_skill ----------------------------------- */
+export const BucketSkillInput = z.object({
+  theme: z.object({ id: z.string(), name: z.string(), description: z.string(), pinned: z.boolean() }),
+  evidence: z.array(z.object({ evidence_id: z.string(), source_type: z.string(), occurred_at: z.string(), title: z.string(), participants: z.array(z.string()), text: z.string().optional() })),
+  actions: z.array(z.object({ title: z.string(), status: z.string(), owner: z.string().optional(), due_at: z.string().optional() })),
+  decisions: z.array(z.object({ topic: z.string(), status: z.string(), decision_maker: z.string().optional() })),
+  escalations: z.array(z.object({ issue: z.string(), status: z.string(), target: z.string().optional() })),
+  risks: z.array(z.object({ title: z.string(), status: z.string() })),
+  signals: z.array(z.object({ statement: z.string(), mentions: z.number() })),
+  metrics: z.array(z.object({ name: z.string(), value: z.number(), unit: z.string().optional(), delta: z.number().optional() })),
+  people: z.array(z.object({ name: z.string(), count: z.number() })),
+  forums: z.array(z.string()),
+  days: z.number(),
+});
+export type BucketSkillInput = z.infer<typeof BucketSkillInput>;
+export const BucketSkillOutput = BucketSkill.omit({ id: true, theme_id: true, version: true, status: true, generated_at: true, fixed_at: true, generated_by: true, history_depth: true, evidence: true, user_adjusted: true, user_notes: true, epistemic: true });
+export type BucketSkillOutput = z.infer<typeof BucketSkillOutput>;
+
+export const generateBucketSkill: Skill<BucketSkillInput, BucketSkillOutput> = {
+  name: "generate_bucket_skill", version: "1.0.0",
+  description: "Derive a management playbook for one business bucket from its history (or the best assumption when history is thin).",
+  input: BucketSkillInput, output: BucketSkillOutput,
+  system: baseSystem,
+  prompt(input) {
+    return `Derive a management playbook for the bucket "${input.theme.name}" (${input.theme.description || "no description"}).
+Use the history below wherever it exists and label each step's basis as "history"; where history is absent, fall back to the standard executive operating loop (sense → interpret → decide → align → execute) and label the basis "assumption". Set "basis" overall to history, mixed or assumption, and explain the derivation in "rationale".
+Include: purpose; review cadence and the forums seen in history; primary owner and stakeholders (most involved people); signals to watch with thresholds; exactly 5 steps (one per stage) with trigger, owner and output; escalation path (condition → to whom → within days); decision rights observed; recurring blockers; confidence.
+Never invent people or forums that do not appear in the history; when none appear, say so in the rationale field and leave the owner empty.
+
+HISTORY (${input.days} days, ${input.evidence.length} evidence items):
+${JSON.stringify({ people: input.people, forums: input.forums, actions: input.actions, decisions: input.decisions, escalations: input.escalations, risks: input.risks, signals: input.signals, metrics: input.metrics }, null, 1)}
+
+EVIDENCE:
+${input.evidence.map((e) => `--- ${e.evidence_id} | ${e.source_type} | ${e.occurred_at} | ${e.title} | ${e.participants.join(", ")}\n${e.text ?? ""}`).join("\n\n")}`;
+  },
+};
+
+export const SKILLS = { analyzeBatch, generateRecommendations, summarize, answerWithEvidence, generateBucketSkill } as const;
 export type RecommendationLike = Recommendation;

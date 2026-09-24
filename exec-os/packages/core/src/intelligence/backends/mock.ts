@@ -7,7 +7,8 @@ import type { IntelligenceBackend, BackendInfo, RunOptions } from "./types.js";
 import type { Skill, SkillContext } from "../skills/index.js";
 import { FIXTURES, FIXTURE_THEMES } from "../../providers/mock/fixtures.js";
 import type { BatchAnalysis, Observation } from "../../domain/index.js";
-import type { AnalyzeBatchInput, RecommendationsInput, SummarizeInput, AnswerInput } from "../skills/index.js";
+import type { AnalyzeBatchInput, RecommendationsInput, SummarizeInput, AnswerInput, BucketSkillInput, BucketSkillOutput } from "../skills/index.js";
+import { derivePlaybook, type BucketHistory } from "../pipeline/playbooks.js";
 
 function resolveDue(marker: string | undefined, today: Date): string | undefined {
   if (!marker) return undefined;
@@ -65,8 +66,25 @@ export class MockBackend implements IntelligenceBackend {
       case "generate_recommendations": return this.recommend(input as RecommendationsInput) as TOut;
       case "summarize": return this.summarize(input as SummarizeInput) as TOut;
       case "answer_with_evidence": return this.answer(input as AnswerInput) as TOut;
+      case "generate_bucket_skill": return this.playbook(input as BucketSkillInput, ctx) as TOut;
       default: throw new Error(`mock backend: unknown skill ${skill.name}`);
     }
+  }
+
+  private playbook(input: BucketSkillInput, ctx: SkillContext): BucketSkillOutput {
+    // Rebuild a BucketHistory-shaped view from the skill input and reuse the deterministic derivation.
+    const h = {
+      theme: { id: input.theme.id, name: input.theme.name, description: input.theme.description, pinned: input.theme.pinned, evidence: [], slug: "", discovered: true, what_changed: "", current_state: "", confidence: 0.5, created_at: "", updated_at: "", hidden: false, locked_fields: [], origin: "discovered" as const },
+      evidence: input.evidence.map((e) => ({ evidence_id: e.evidence_id, provider_id: "", source_type: e.source_type as never, occurred_at: e.occurred_at, retrieved_at: e.occurred_at, title: e.title, participants: e.participants.map((name) => ({ name })), source_ref: { kind: "", id: "" }, text: e.text, sensitivity: {}, content_hash: "" })),
+      actions: input.actions.map((a) => ({ ...a, id: "", evidence: [], status: a.status as never })) as never[], decisions: input.decisions.map((d) => ({ ...d, id: "", evidence: [], status: d.status as never })) as never[],
+      escalations: input.escalations.map((e) => ({ ...e, id: "", evidence: [], target_decision_maker: e.target })) as never[], risks: input.risks.map((r) => ({ ...r, id: "", evidence: [] })) as never[],
+      signals: input.signals.map((s) => ({ statement: s.statement, evidence: Array.from({ length: s.mentions }, () => ({ evidence_id: "", role: "supports" })) })) as never[],
+      metrics: input.metrics.map((m) => ({ ...m, id: "", as_of: input.evidence[0]?.occurred_at ?? "", evidence: [] })) as never[],
+      people: input.people, forums: input.forums, sourceTypes: Array.from(new Set(input.evidence.map((e) => e.source_type))), days: input.days,
+    } as unknown as BucketHistory;
+    const sk = derivePlaybook(h, ctx);
+    const { id: _i, theme_id: _t, version: _v, status: _s, generated_at: _g, fixed_at: _f, generated_by: _b, history_depth: _h, evidence: _e, user_adjusted: _u, user_notes: _n, epistemic: _p, ...out } = sk;
+    return out;
   }
 
   private analyze(input: AnalyzeBatchInput, opts: RunOptions): BatchAnalysis {

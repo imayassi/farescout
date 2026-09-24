@@ -6,6 +6,7 @@ import { Home } from "./pages/Home";
 import { Actions, DataRequests, Decisions, Escalations, Recommendations, Risks } from "./pages/Centers";
 import { ThemeDetail, Themes } from "./pages/Themes";
 import { Ask, Settings, Sources, Timeline } from "./pages/Misc";
+import { PlaybookOverview } from "./components/Playbook";
 
 /** Minimal hash router: #/path?query */
 function useRoute(): [string, URLSearchParams, (p: string) => void] {
@@ -15,7 +16,7 @@ function useRoute(): [string, URLSearchParams, (p: string) => void] {
   return [path, query, (p) => { window.location.hash = p; }];
 }
 
-const MORE: Array<[string, string]> = [["/brief", "Brief"], ["/themes", "Themes"], ["/actions", "Actions"], ["/decisions", "Decisions"], ["/escalations", "Escalations"], ["/risks", "Risks"], ["/recommendations", "Recommendations"], ["/data-requests", "Data requests"], ["/timeline", "Timeline"], ["/ask", "Ask"], ["/sources", "Sources"], ["/settings", "Settings"]];
+const MORE: Array<[string, string]> = [["/playbooks", "Playbooks"], ["/brief", "Brief"], ["/themes", "Themes"], ["/actions", "Actions"], ["/decisions", "Decisions"], ["/escalations", "Escalations"], ["/risks", "Risks"], ["/recommendations", "Recommendations"], ["/data-requests", "Data requests"], ["/timeline", "Timeline"], ["/ask", "Ask"], ["/sources", "Sources"], ["/settings", "Settings"]];
 
 export function App() {
   bootstrapToken();
@@ -46,9 +47,10 @@ export function App() {
   let m: RegExpMatchArray | null;
   if ((m = path.match(/^\/bucket\/(.+)$/))) { level = 2; page = <BucketTab id={m[1]!} nav={nav} refreshKey={refreshKey} endpoint={endpoint} onChanged={onChanged} />; }
   else if ((m = path.match(/^\/item\/(.+)$/))) { level = 3; page = <ItemTab id={m[1]!} nav={nav} refreshKey={refreshKey} endpoint={endpoint} onChanged={onChanged} />; }
-  else if ((m = path.match(/^\/evidence\/(.+)$/))) { level = 4; page = <EvidenceTab id={m[1]!} nav={nav} refreshKey={refreshKey} />; }
+  else if ((m = path.match(/^\/evidence\/(.+)$/))) { level = 4; page = <EvidenceTab id={m[1]!} nav={nav} refreshKey={refreshKey} onChanged={onChanged} />; }
   else if ((m = path.match(/^\/themes\/(.+)$/))) page = <ThemeDetail id={m[1]!} onWhy={setWhy} refreshKey={refreshKey} />;
   else switch (path) {
+    case "/playbooks": page = <PlaybookOverview go={go} />; break;
     case "/brief": page = <Home onWhy={setWhy} go={go} refreshKey={refreshKey} />; break;
     case "/themes": page = <Themes go={go} refreshKey={refreshKey} />; break;
     case "/actions": page = <Actions onWhy={setWhy} refreshKey={refreshKey} query={query.get("filter") ?? undefined} />; break;
@@ -61,7 +63,7 @@ export function App() {
     case "/ask": page = <Ask onWhy={setWhy} />; break;
     case "/sources": page = <Sources status={status} onSync={sync} refreshKey={refreshKey} />; break;
     case "/settings": page = <Settings status={status} />; break;
-    default: level = 1; page = <ExecutiveTab nav={nav} refreshKey={refreshKey} />;
+    default: level = 1; page = <ExecutiveTab nav={nav} refreshKey={refreshKey} onChanged={onChanged} />;
   }
 
   const tabs: Array<{ n: number; label: string; href?: string; on: boolean }> = [

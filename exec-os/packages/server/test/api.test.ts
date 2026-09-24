@@ -141,3 +141,56 @@ describe("data requests at bucket and item level", () => {
     expect((await app.inject({ method: "GET", url: `/api/object/${r.json().request.id}`, headers })).statusCode).toBe(200);
   });
 });
+
+describe("playbooks and tab edit loop over the API", () => {
+  let dir: string; let rt: Runtime; let app: FastifyInstance; let headers: Record<string, string>;
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "execos-pbapi-"));
+    fs.mkdirSync(path.join(dir, "config"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "config", "app.yaml"), YAML.stringify({ user: { display_name: "Alex Rivera" }, enabled_sources: { mock: true }, intelligence: { backend: "mock" }, themes: { pinned: ["Forecast"] } }));
+    fs.writeFileSync(path.join(dir, "config", "mcp.yaml"), YAML.stringify({ providers: [{ id: "mock", type: "mock", enabled: true }] }));
+    rt = await createRuntime({ dataRoot: dir, quiet: true }); app = createApp(rt); headers = { "x-execos-token": rt.token };
+    await rt.orchestrator.run("bootstrap");
+  });
+  afterAll(async () => { await app.close(); await rt.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+
+  it("serves a fixed playbook per bucket with a five-stage process and versions", async () => {
+    const exec = (await app.inject({ method: "GET", url: "/api/exec", headers })).json();
+    const forecast = exec.buckets.find((b: { name: string }) => b.name === "Forecast");
+    expect(forecast.playbook.status).toBe("fixed"); expect(forecast.playbook.basis).toBe("history");
+    const pb = (await app.inject({ method: "GET", url: `/api/themes/${forecast.id}/playbook`, headers })).json();
+    expect(pb.playbook.steps.map((s: { stage: string }) => s.stage)).toEqual(["sense", "interpret", "decide", "align", "execute"]);
+    expect(pb.playbook.evidence_details.length).toBeGreaterThan(0);
+    const re = (await app.inject({ method: "POST", url: `/api/themes/${forecast.id}/playbook/regenerate`, headers, payload: { reason: "test" } })).json();
+    expect(re.playbook.version).toBe(2);
+    const ed = (await app.inject({ method: "PATCH", url: `/api/themes/${forecast.id}/playbook`, headers, payload: { user_notes: "Review with Marcus weekly" } })).json();
+    expect(ed.playbook.user_adjusted).toBe(true); expect(ed.playbook.user_notes).toBe("Review with Marcus weekly");
+    const list = (await app.inject({ method: "GET", url: "/api/playbooks", headers })).json();
+    expect(list.find((x: { name: string }) => x.name === "Forecast").playbook.version).toBe(2);
+  });
+  it("adjusts, adds and removes items and buckets through the API", async () => {
+    const overdue = (await app.inject({ method: "GET", url: "/api/objects/action?filter=overdue", headers })).json();
+    const p = await app.inject({ method: "PATCH", url: `/api/object/${overdue[0].id}`, headers, payload: { owner: "Dana Okafor", status: "in_progress" } });
+    expect(p.statusCode).toBe(200); expect(p.json().changed.sort()).toEqual(["owner", "status"]);
+    const add = await app.inject({ method: "POST", url: "/api/objects", headers, payload: { type: "risk", title: "Contractor onboarding slips into surge", description: "Lead time 3 weeks", owner: "Riley Morgan" } });
+    expect(add.statusCode).toBe(201); expect(add.json().object.epistemic).toBe("fact");
+    const rm = await app.inject({ method: "DELETE", url: `/api/object/${add.json().object.id}?reason=duplicate`, headers });
+    expect(rm.statusCode).toBe(200);
+    const b = await app.inject({ method: "POST", url: "/api/themes", headers, payload: { name: "Partner program", description: "New" } });
+    expect(b.statusCode).toBe(201);
+    const pb = await app.inject({ method: "PATCH", url: `/api/themes/${b.json().theme.id}`, headers, payload: { current_state: "Kick-off next week" } });
+    expect(pb.json().theme.current_state).toBe("Kick-off next week"); expect(pb.json().theme.locked_fields).toContain("current_state");
+    const del = await app.inject({ method: "DELETE", url: `/api/themes/${b.json().theme.id}`, headers });
+    expect(del.json().theme.hidden).toBe(true);
+    expect((await app.inject({ method: "GET", url: "/api/themes", headers })).json().some((t: { name: string }) => t.name === "Partner program")).toBe(false);
+  });
+  it("excludes evidence and it disappears from items", async () => {
+    const overdue = (await app.inject({ method: "GET", url: "/api/objects/action?filter=overdue", headers })).json();
+    const evId = overdue[0].evidence_details[0].evidence_id;
+    const r = await app.inject({ method: "POST", url: `/api/evidence/${evId}/exclude`, headers, payload: { reason: "personal" } });
+    expect(r.json().removed).toBe(true);
+    expect((await app.inject({ method: "GET", url: `/api/evidence/${evId}`, headers })).statusCode).toBe(404);
+    const again = (await app.inject({ method: "GET", url: `/api/object/${overdue[0].id}`, headers })).json();
+    expect(again.object.evidence_details.some((e: { evidence_id: string }) => e.evidence_id === evId)).toBe(false);
+  });
+});

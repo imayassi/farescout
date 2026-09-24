@@ -73,40 +73,41 @@ export function reconcileObservations(store: Store, observations: Observation[],
     if (match) {
       const before = { ...(match as unknown as Record<string, unknown>) };
       const m = match as unknown as Record<string, unknown>;
+      const locked = new Set((m.locked_fields as string[] | undefined) ?? []);
       m.evidence = mergeEvidence((m.evidence as EvidenceRef[]) ?? [], refs);
       m.updated_at = now;
       if (lastEvidenceAt > String(m.last_observed)) m.last_observed = lastEvidenceAt;
-      m.theme_id = m.theme_id ?? theme_id;
+      if (!locked.has("theme_id")) m.theme_id = m.theme_id ?? theme_id;
       m.confidence = Math.max(Number(m.confidence ?? 0), obs.confidence);
       if (type === "action") {
         const a = m as unknown as ActionItem;
         a.mention_count = (a.evidence as EvidenceRef[]).length;
-        if (!a.owner && obs.owner) a.owner = obs.owner;
-        if (!a.due_at && obs.due_at) a.due_at = obs.due_at;
-        a.stakeholders = uniq([...(a.stakeholders ?? []), ...obs.stakeholders]);
+        if (!a.owner && obs.owner && !locked.has("owner")) a.owner = obs.owner;
+        if (!a.due_at && obs.due_at && !locked.has("due_at")) a.due_at = obs.due_at;
+        if (!locked.has("stakeholders")) a.stakeholders = uniq([...(a.stakeholders ?? []), ...obs.stakeholders]);
         const nextStatus = actionStatusFromHint(obs.status_hint, a.status);
-        if (nextStatus !== a.status) {
+        if (nextStatus !== a.status && !locked.has("status")) {
           store.journal({ object_type: "action", object_id: a.id, event: "status_changed", actor: "system", summary: `${a.status} → ${nextStatus}`, before: { status: a.status }, after: { status: nextStatus }, evidence: refs, at: now });
           a.status = nextStatus;
         }
       } else if (type === "decision") {
         const d = m as unknown as Decision;
-        if (!d.decision_maker && obs.decision_maker) d.decision_maker = obs.decision_maker;
-        if (!d.rationale && obs.rationale) d.rationale = obs.rationale;
+        if (!d.decision_maker && obs.decision_maker && !locked.has("decision_maker")) d.decision_maker = obs.decision_maker;
+        if (!d.rationale && obs.rationale && !locked.has("rationale")) d.rationale = obs.rationale;
         if (obs.alternatives.length) d.alternatives = uniq([...(d.alternatives ?? []), ...obs.alternatives]);
         const next: Decision["status"] = decisionStatus(obs.status_hint, obs.epistemic, d.status);
-        if (next !== d.status && !(d.status === "recorded" && next !== "recorded")) {
+        if (next !== d.status && !locked.has("status") && !(d.status === "recorded" && next !== "recorded")) {
           store.journal({ object_type: "decision", object_id: d.id, event: "status_changed", actor: "system", summary: `${d.status} → ${next}`, before: { status: d.status }, after: { status: next }, evidence: refs, at: now });
           d.status = next;
           if (next === "recorded") { d.epistemic = "recorded_decision"; d.decision_date = d.decision_date ?? lastEvidenceAt; }
         }
       } else if (type === "escalation") {
         const e = m as unknown as Escalation;
-        if (obs.urgency && ["low", "medium", "high", "critical"].indexOf(obs.urgency) > ["low", "medium", "high", "critical"].indexOf(e.urgency)) e.urgency = obs.urgency;
-        if (!e.target_decision_maker && obs.decision_maker) e.target_decision_maker = obs.decision_maker;
+        if (obs.urgency && !locked.has("urgency") && ["low", "medium", "high", "critical"].indexOf(obs.urgency) > ["low", "medium", "high", "critical"].indexOf(e.urgency)) e.urgency = obs.urgency;
+        if (!e.target_decision_maker && obs.decision_maker && !locked.has("target_decision_maker")) e.target_decision_maker = obs.decision_maker;
       } else if (type === "risk") {
         const r = m as unknown as Risk;
-        if (String(m.description ?? "") !== obs.description && obs.description) r.description = obs.description;
+        if (String(m.description ?? "") !== obs.description && obs.description && !locked.has("description")) r.description = obs.description;
       }
       store.upsertObject(type, m as unknown as AnyObject);
       store.journal({ object_type: type, object_id: String(m.id), event: "updated", actor: "system", summary: `New evidence (${refs.length}) linked`, before: { evidence_count: (before.evidence as EvidenceRef[] | undefined)?.length ?? 0 }, after: { evidence_count: (m.evidence as EvidenceRef[]).length }, evidence: refs, at: now });
@@ -116,7 +117,7 @@ export function reconcileObservations(store: Store, observations: Observation[],
     }
 
     // Create
-    const base = { created_at: now, updated_at: now, first_seen: lastEvidenceAt, last_observed: lastEvidenceAt, theme_id, epistemic: obs.epistemic, confidence: obs.confidence, evidence: refs, reasoning: obs.description || undefined, hidden: false };
+    const base = { created_at: now, updated_at: now, first_seen: lastEvidenceAt, last_observed: lastEvidenceAt, theme_id, epistemic: obs.epistemic, confidence: obs.confidence, evidence: refs, reasoning: obs.description || undefined, hidden: false, locked_fields: [] as string[] };
     let created: AnyObject; let id: string;
     switch (type) {
       case "action": {

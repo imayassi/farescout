@@ -17,7 +17,7 @@ export class ApiError extends Error { constructor(message: string, readonly stat
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = bootstrapToken();
-  const res = await fetch(path, { method, headers: { "content-type": "application/json", ...(token ? { "x-execos-token": token } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await fetch(path, { method, headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(token ? { "x-execos-token": token } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = j.error ?? j.message ?? msg; if (j.hint) msg += ` — ${j.hint}`; } catch { /* ignore */ }
@@ -30,6 +30,8 @@ export const api = {
   get: <T>(path: string) => call<T>("GET", path),
   post: <T>(path: string, body?: unknown) => call<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => call<T>("PUT", path, body),
+  patch: <T>(path: string, body?: unknown) => call<T>("PATCH", path, body),
+  del: <T>(path: string) => call<T>("DELETE", path),
 };
 
 /* ---- shared types (mirrors the server payloads; kept loose on purpose) ---- */

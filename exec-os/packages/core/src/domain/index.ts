@@ -79,6 +79,8 @@ const Base = {
   evidence: z.array(EvidenceRef).default([]),
   reasoning: z.string().optional(),  // why the system surfaced this
   hidden: z.boolean().default(false),
+  /** Fields the user set by hand; reconciliation never overwrites them. */
+  locked_fields: z.array(z.string()).default([]),
 };
 
 export const Theme = z.object({
@@ -95,8 +97,51 @@ export const Theme = z.object({
   updated_at: z.string(),
   evidence: z.array(EvidenceRef).default([]),
   hidden: z.boolean().default(false),
+  locked_fields: z.array(z.string()).default([]),
+  origin: z.enum(["discovered", "pinned", "user"]).default("discovered"),
 });
 export type Theme = z.infer<typeof Theme>;
+
+/* ------------------------------------------------------------------------- */
+/* Bucket playbook ("skill"): how to manage a bucket, derived once, then fixed  */
+/* ------------------------------------------------------------------------- */
+export const LoopStage = z.enum(["sense", "interpret", "decide", "align", "execute"]);
+export const PlaybookStep = z.object({
+  n: z.number().int(),
+  stage: LoopStage,
+  title: z.string(),
+  description: z.string().default(""),
+  trigger: z.string().optional(),     // what starts this step (event, cadence, threshold)
+  owner: z.string().optional(),
+  output: z.string().optional(),      // what the step produces
+  basis: z.enum(["history", "assumption"]).default("assumption"),
+});
+export const BucketSkill = z.object({
+  id: z.string(),
+  theme_id: z.string(),
+  version: z.number().int().default(1),
+  status: z.enum(["draft", "fixed"]).default("fixed"),
+  generated_at: z.string(),
+  fixed_at: z.string().optional(),
+  generated_by: z.enum(["model", "rules", "user"]).default("rules"),
+  basis: z.enum(["history", "assumption", "mixed"]).default("assumption"),
+  history_depth: z.object({ evidence: z.number().int(), objects: z.number().int(), days: z.number().int() }).default({ evidence: 0, objects: 0, days: 0 }),
+  purpose: z.string().default(""),
+  cadence: z.object({ review: z.enum(["daily", "weekly", "biweekly", "monthly", "quarterly"]).default("weekly"), forums: z.array(z.string()).default([]), rationale: z.string().default("") }).default({}),
+  owners: z.object({ primary: z.string().optional(), stakeholders: z.array(z.string()).default([]), rationale: z.string().default("") }).default({}),
+  signals_to_watch: z.array(z.object({ name: z.string(), source_types: z.array(z.string()).default([]), threshold: z.string().optional(), rationale: z.string().default("") })).default([]),
+  steps: z.array(PlaybookStep).default([]),
+  escalation_path: z.array(z.object({ condition: z.string(), to: z.string(), within_days: z.number().int().optional() })).default([]),
+  decision_rights: z.array(z.object({ decision: z.string(), maker: z.string() })).default([]),
+  recurring_blockers: z.array(z.string()).default([]),
+  evidence: z.array(EvidenceRef).default([]),
+  confidence: Confidence.default(0.5),
+  epistemic: EpistemicStatus.default("inference"),
+  rationale: z.string().default(""),
+  user_adjusted: z.boolean().default(false),
+  user_notes: z.string().optional(),
+});
+export type BucketSkill = z.infer<typeof BucketSkill>;
 
 export const Signal = z.object({
   ...Base,
@@ -291,6 +336,7 @@ export const JournalEntry = z.object({
 export type JournalEntry = z.infer<typeof JournalEntry>;
 
 export const FeedbackKind = z.enum([
+  "edit", "add", "remove", "move_bucket", "exclude_evidence", "playbook_edit", "playbook_regenerate",
   "not_an_action", "wrong_owner", "mark_completed", "merge", "not_important",
   "is_decision", "escalate", "hide_recommendation", "pin_theme", "unpin_theme",
   "accept_recommendation", "modify_recommendation", "dismiss_recommendation",
