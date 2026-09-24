@@ -38,7 +38,20 @@ function heuristics(input: AnalyzeBatchInput): BatchAnalysis {
       observations.push({ kind: "data_request", epistemic: "extracted_action", title: `Data request: ${e.title || firstLine.slice(0, 60)}`, description: firstLine.slice(0, 240), request_kind: "analysis", confidence: 0.45, alternatives: [], ...base });
     }
   }
-  return { observations, themes: [], evidence_gaps: [], conflicts: [] };
+  // Documents seed themes: markdown headings and numbered priority lines become theme hints.
+  const themes: Array<{ name: string; description: string; evidence_ids: string[] }> = [];
+  for (const e of input.evidence) {
+    if (e.source_type !== "document" || !e.text) continue;
+    for (const line of e.text.split(/\n/)) {
+      const m = line.match(/^\s*(?:#{1,3}\s+|\d+[.)]\s+)(.{4,80})$/);
+      if (!m) continue;
+      const name = m[1]!.replace(/[:.]+$/, "").split(/[:—-]/)[0]!.trim().slice(0, 40);
+      if (name.length < 4 || /^(priorities|terminology|notes?|summary)$/i.test(name)) continue;
+      const t = themes.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (t) t.evidence_ids.push(e.evidence_id); else themes.push({ name, description: `From ${e.title}`, evidence_ids: [e.evidence_id] });
+    }
+  }
+  return { observations, themes: themes.slice(0, 12), evidence_gaps: [], conflicts: [] };
 }
 
 export class MockBackend implements IntelligenceBackend {

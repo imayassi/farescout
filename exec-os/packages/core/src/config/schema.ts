@@ -54,6 +54,15 @@ export const AppConfigSchema = z.object({
         .default({}),
     })
     .default({}),
+  data_requests: z
+    .object({
+      endpoint_url: z.string().default(""),          // optional intake endpoint (POST JSON); empty = store locally only
+      method: z.enum(["POST", "PUT"]).default("POST"),
+      headers: z.record(z.string(), z.string()).default({}),
+      timeout_seconds: z.number().int().min(1).max(120).default(15),
+      default_owner: z.string().default(""),         // e.g. the data & analytics lead
+    })
+    .default({}),
   server: z
     .object({
       port: z.number().int().min(1024).max(65535).default(47810),

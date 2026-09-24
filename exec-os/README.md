@@ -52,6 +52,39 @@ Other platforms (development): `npm install && npm run build && npm start`.
 
 ## Everyday use
 
+The primary experience is a four-level drill-down. Every tile, count and row is clickable and
+takes you one level deeper; the level tabs at the top take you back up.
+
+| Level | Tab | What you see |
+|---|---|---|
+| 1 | **Executive** | Attention counts (decisions, escalations, overdue, recommendations, open data requests), the narrative, the **buckets** derived from evidence, metrics, upcoming |
+| 2 | **Bucket** | One business bucket (theme): what changed, current state, its decisions / escalations / actions / risks / recommendations / data requests / signals / metrics, and the evidence it was derived from. **Request data for this bucket** |
+| 3 | **Item** | One item: why it is shown, epistemic status, owner/dates/rationale, evidence rows, related items, history, corrections. **Request data for this item** |
+| 4 | **Evidence** | The underlying source item (text as retained), "open in source system" when the source supplied a link, and every item derived from it |
+
+Buckets are not hard-coded. They are discovered from the evidence (MCP content and your private
+documents; document headings and numbered priorities seed bucket names), and the ones listed under
+`themes.pinned` in your config are always present.
+
+### Data requests for the data team
+
+At bucket or item level, **Request data** opens a short form (what, kind, priority, needed by,
+notes). The request is always stored locally and journaled. If `data_requests.endpoint_url` is
+set (Settings → Data requests, or `app.yaml`), it is also pushed as JSON to that endpoint with
+the bucket, item, evidence references and requester attached, and the delivery result
+(reference id or error) is recorded on the request. Example payload:
+
+```json
+{ "id": "dreq_…", "scope": "item", "request": "Pull 8 weeks of case volume by queue", "kind": "data_pull",
+  "priority": "high", "needed_by": "2026-10-01", "requested_by": "Business Manager", "owner": "Tom Alvarez",
+  "bucket": { "id": "thm_…", "name": "Forecast", "current_state": "…" },
+  "item": { "type": "action", "id": "act_…", "title": "Deliver re-baselined H1 volume forecast", "status": "blocked" },
+  "evidence": [ { "evidence_id": "ev_…", "label": "email — 2026-09-06", "title": "RE: Forecast re-baseline — status" } ],
+  "source": "execos" }
+```
+
+The classic screens remain available under **More**:
+
 | Screen | What it answers |
 |---|---|
 | **Home** (Daily / Weekly / Monthly / Quarterly) | What needs my attention? What changed? Which themes moved? What is recommended? What is coming up? |

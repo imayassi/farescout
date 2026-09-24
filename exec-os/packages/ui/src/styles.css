@@ -110,3 +110,22 @@ textarea { min-height: 90px; resize: vertical; }
 .loop .step b { display: block; margin: 2px 0 4px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; } th { color: var(--ink-3); font-weight: 600; font-size: 12px; }
 code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+
+/* ---- drill-down shell ---- */
+.shell.drill { grid-template-columns: 1fr; }
+.topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 18px; padding: 10px 28px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.topbar .brand { padding: 0; }
+.leveltabs { display: flex; gap: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+.leveltabs a, .leveltabs .off { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 9px; text-decoration: none; color: var(--ink-2); font-weight: 600; font-size: 13px; }
+.leveltabs a:hover { background: var(--surface); }
+.leveltabs a.on { background: var(--accent); color: var(--accent-ink); }
+.leveltabs .off { color: var(--ink-3); opacity: .6; }
+.leveltabs .n { width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.08); display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+.leveltabs a.on .n { background: rgba(255,255,255,.25); }
+.more { position: relative; } .more summary { list-style: none; cursor: pointer; padding: 7px 12px; border: 1px solid var(--line); border-radius: 9px; font-weight: 600; font-size: 13px; }
+.more summary::-webkit-details-marker { display: none; }
+.more .menu { position: absolute; top: 40px; left: 0; min-width: 190px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; z-index: 50; }
+.more .menu a { padding: 7px 10px; border-radius: 8px; text-decoration: none; color: var(--ink-2); font-size: 13px; } .more .menu a:hover, .more .menu a.active { background: var(--accent-soft); color: var(--accent); }
+.statusline { margin-left: auto; }
+.shell.drill .main { max-width: 1320px; margin: 0 auto; }
+@media (max-width: 800px) { .topbar { padding: 10px 14px; } .statusline { margin-left: 0; } }

@@ -58,6 +58,14 @@ intelligence:
     max_items: 25
     max_chars: 60000
 
+data_requests:                       # business-manager data requests raised at bucket or item level
+  endpoint_url: ""                   # optional intake endpoint (POST JSON), e.g. a Power Automate / Logic App / ticketing URL.
+                                     # Empty = requests are stored locally only and listed in the app.
+  method: POST
+  headers: {}                        # e.g. { "x-api-key": "..." }  (prefer a header reference, never commit real keys)
+  timeout_seconds: 15
+  default_owner: ""                  # e.g. the Data & Analytics lead
+
 server:
   port: 47810
   open_window: true                  # open an Edge/Chrome app window on launch

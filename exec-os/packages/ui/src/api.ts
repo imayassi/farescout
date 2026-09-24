@@ -36,7 +36,7 @@ export const api = {
 export type Epistemic = "fact" | "extracted_action" | "recorded_decision" | "inference" | "recommendation" | "potential_escalation";
 export interface EvidenceView {
   evidence_id: string; provider_id: string; source_type: string; occurred_at: string; title: string; label: string;
-  participants: Array<{ name: string; email?: string }>; role?: string; excerpt?: string; text?: string; open_url?: string; missing?: boolean;
+  participants: Array<{ name: string; email?: string }>; role?: string; excerpt?: string; text?: string; open_url?: string; missing?: boolean; thread_id?: string;
   structured?: Record<string, unknown>;
 }
 export interface Obj {
@@ -48,6 +48,7 @@ export interface Obj {
   suggested_owner?: string; suggested_next_step?: string; rule?: string; theme_ids?: string[]; kind?: string; requested_by?: string;
   trend?: string; likelihood?: string; impact?: string; is_commitment?: boolean; origin?: string; value?: number; unit?: string; delta?: number; as_of?: string;
   evidence: Array<{ evidence_id: string; role: string; excerpt?: string }>; evidence_details: EvidenceView[];
+  delivery?: { status: string; endpoint?: string; error?: string; external_id?: string; response_status?: number }; scope?: string; notes?: string; priority?: string;
 }
 export interface Theme { id: string; name: string; slug: string; description: string; pinned: boolean; discovered: boolean; what_changed: string; current_state: string; confidence: number; updated_at: string; counts: Record<string, number>; evidence: unknown[] }
 export interface JournalEntry { id: string; at: string; object_type: string; object_id: string; event: string; actor: string; summary: string; title?: string; status?: string; epistemic?: Epistemic; before?: Record<string, unknown>; after?: Record<string, unknown>; evidence: Array<{ evidence_id: string }> }

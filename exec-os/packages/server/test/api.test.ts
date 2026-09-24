@@ -77,3 +77,67 @@ describe("loopback API", () => {
     expect(fs.readFileSync(path.join(dir, "config", "app.yaml"), "utf8")).toMatch(/Customer/);
   });
 });
+
+describe("data requests at bucket and item level", () => {
+  let dir: string; let rt: Runtime; let app: FastifyInstance; let headers: Record<string, string>;
+  const received: unknown[] = [];
+  let intake: import("node:http").Server; let intakeUrl: string;
+  beforeAll(async () => {
+    const http = await import("node:http");
+    intake = http.createServer((req, res) => { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { received.push(JSON.parse(b)); res.writeHead(201, { "content-type": "application/json" }); res.end(JSON.stringify({ id: "TICKET-42" })); }); });
+    await new Promise<void>((r) => intake.listen(0, "127.0.0.1", r));
+    intakeUrl = `http://127.0.0.1:${(intake.address() as { port: number }).port}/intake`;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "execos-dr-"));
+    fs.mkdirSync(path.join(dir, "config"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "config", "app.yaml"), YAML.stringify({ user: { display_name: "Business Manager" }, enabled_sources: { mock: true }, intelligence: { backend: "mock" }, data_requests: { endpoint_url: "", default_owner: "Tom Alvarez" } }));
+    fs.writeFileSync(path.join(dir, "config", "mcp.yaml"), YAML.stringify({ providers: [{ id: "mock", type: "mock", enabled: true }] }));
+    rt = await createRuntime({ dataRoot: dir, quiet: true });
+    app = createApp(rt); headers = { "x-execos-token": rt.token };
+    await rt.orchestrator.run("bootstrap");
+  });
+  afterAll(async () => { await app.close(); await rt.close(); intake.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+
+  it("exposes the executive drill-down with buckets derived from evidence", async () => {
+    const j = (await app.inject({ method: "GET", url: "/api/exec", headers })).json();
+    expect(j.buckets.length).toBeGreaterThan(5);
+    const forecast = j.buckets.find((b: { name: string }) => b.name === "Forecast");
+    expect(forecast.derived_from.evidence).toBeGreaterThan(0);
+    expect(forecast.derived_from.source_types.length).toBeGreaterThan(1);
+    expect(forecast.attention.overdue).toBeGreaterThan(0);
+    expect(j.attention.decisions_needed.length).toBeGreaterThan(0);
+  });
+  it("stores a bucket-level request locally when no endpoint is configured", async () => {
+    const exec = (await app.inject({ method: "GET", url: "/api/exec", headers })).json();
+    const bucket = exec.buckets.find((b: { name: string }) => b.name === "Forecast");
+    const r = await app.inject({ method: "POST", url: "/api/data-requests", headers, payload: { scope: "bucket", theme_id: bucket.id, request: "Weekly volume vs forecast variance by tier", kind: "dashboard", priority: "high" } });
+    expect(r.statusCode).toBe(201);
+    const j = r.json();
+    expect(j.delivery.status).toBe("not_configured");
+    expect(j.request.scope).toBe("bucket"); expect(j.request.owner).toBe("Tom Alvarez"); expect(j.request.requested_by).toBe("Business Manager");
+    expect(j.request.evidence_details.length).toBeGreaterThan(0);
+    const list = (await app.inject({ method: "GET", url: `/api/data-requests?theme_id=${bucket.id}`, headers })).json();
+    expect(list.items.some((d: { id: string }) => d.id === j.request.id)).toBe(true);
+  });
+  it("forwards an item-level request to the configured intake endpoint with bucket, item and evidence context", async () => {
+    rt.config.app.data_requests.endpoint_url = intakeUrl;
+    const overdue = (await app.inject({ method: "GET", url: "/api/objects/action?filter=overdue", headers })).json();
+    const r = await app.inject({ method: "POST", url: "/api/data-requests", headers, payload: { scope: "item", object_id: overdue[0].id, request: "Pull the last 8 weeks of case volume by queue to support the re-baseline", kind: "data_pull", needed_by: "2026-10-01" } });
+    expect(r.statusCode).toBe(201);
+    const j = r.json();
+    expect(j.delivery.status).toBe("delivered"); expect(j.delivery.external_id).toBe("TICKET-42");
+    const sent = received[0] as { scope: string; item: { title: string }; bucket: { name: string }; evidence: unknown[]; source: string };
+    expect(sent.scope).toBe("item"); expect(sent.item.title).toMatch(/forecast/i); expect(sent.bucket.name).toBe("Forecast"); expect(sent.evidence.length).toBeGreaterThan(0); expect(sent.source).toBe("execos");
+    const stored = (await app.inject({ method: "GET", url: `/api/object/${j.request.id}`, headers })).json();
+    expect(stored.object.delivery.status).toBe("delivered");
+    expect(stored.journal.some((x: { actor: string }) => x.actor === "user")).toBe(true);
+  });
+  it("records a failed delivery without losing the request", async () => {
+    rt.config.app.data_requests.endpoint_url = "http://127.0.0.1:9/nowhere";
+    rt.config.app.data_requests.timeout_seconds = 2;
+    const exec = (await app.inject({ method: "GET", url: "/api/exec", headers })).json();
+    const r = await app.inject({ method: "POST", url: "/api/data-requests", headers, payload: { scope: "bucket", theme_id: exec.buckets[0].id, request: "Attrition by tenure band", kind: "analysis" } });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().delivery.status).toBe("failed");
+    expect((await app.inject({ method: "GET", url: `/api/object/${r.json().request.id}`, headers })).statusCode).toBe(200);
+  });
+});

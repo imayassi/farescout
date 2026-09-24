@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
-  applyFeedback, askWithEvidence, evidenceLabel, FeedbackKind, Horizon, daysAgo, saveAppConfig,
+  applyFeedback, askWithEvidence, evidenceLabel, FeedbackKind, Horizon, daysAgo, saveAppConfig, createDataRequest, recordDelivery, DataRequestInput,
   type ActionItem, type Decision, type Escalation, type Risk, type Recommendation, type DataRequest, type Signal, type BusinessMetric,
   type ObjectType, type Evidence, type EvidenceRef,
 } from "@execos/core";
@@ -145,6 +145,70 @@ export function createApp(rt: Runtime): FastifyInstance {
     return list.map((e) => evidenceView(e));
   });
 
+  /* ---- data requests (bucket or item level) ---- */
+  const drCfg = () => rt.config.app.data_requests;
+  app.get("/api/data-requests", async (req) => {
+    const q = z.object({ theme_id: z.string().optional(), object_id: z.string().optional(), status: z.string().optional() }).parse(req.query ?? {});
+    let list = store.listObjects<DataRequest>({ type: "data_request", theme_id: q.theme_id, status: q.status ? q.status.split(",") : undefined, limit: 500 });
+    if (q.object_id) list = list.filter((d) => d.object_id === q.object_id);
+    return { endpoint: drCfg().endpoint_url || null, items: list.map((d) => withEvidence(d as unknown as Record<string, unknown>)) };
+  });
+  app.post("/api/data-requests", async (req, reply) => {
+    const input = DataRequestInput.parse(req.body);
+    const cfg = drCfg();
+    const { request, payload } = createDataRequest(store, { ...input, owner: input.owner ?? (cfg.default_owner || undefined) }, rt.config.app.user);
+    let delivery: DataRequest["delivery"] = { status: "not_configured" };
+    if (cfg.endpoint_url) {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), cfg.timeout_seconds * 1000);
+      try {
+        const res = await fetch(cfg.endpoint_url, { method: cfg.method, headers: { "content-type": "application/json", ...cfg.headers }, body: JSON.stringify(payload), signal: ctrl.signal });
+        let external_id: string | undefined;
+        try { const j = await res.clone().json() as Record<string, unknown>; external_id = typeof j.id === "string" ? j.id : typeof j.ticket === "string" ? j.ticket : undefined; } catch { /* non-json */ }
+        delivery = res.ok ? { status: "delivered", endpoint: cfg.endpoint_url, at: new Date().toISOString(), response_status: res.status, external_id } : { status: "failed", endpoint: cfg.endpoint_url, at: new Date().toISOString(), response_status: res.status, error: `HTTP ${res.status}` };
+      } catch (e) {
+        delivery = { status: "failed", endpoint: cfg.endpoint_url, at: new Date().toISOString(), error: (e as Error).name === "AbortError" ? `timeout after ${cfg.timeout_seconds}s` : (e as Error).message };
+      } finally { clearTimeout(t); }
+      rt.logger.info("data request forwarded", { id: request.id, status: delivery.status, response_status: delivery.response_status });
+    }
+    const final = recordDelivery(store, request.id, delivery) ?? request;
+    return reply.code(201).send({ ok: true, request: withEvidence(final as unknown as Record<string, unknown>), delivery, payload_preview: payload });
+  });
+
+  /* ---- executive drill-down summary (level 1) ---- */
+  app.get("/api/exec", async () => {
+    const now = new Date().toISOString();
+    const summary = store.latestSummary("daily") ?? store.latestSummary("weekly");
+    const themes = store.listThemes().map((t) => {
+      const counts = store.objectsForTheme(t.id);
+      const sources = new Set<string>();
+      for (const r of t.evidence) { const e = store.getEvidence(r.evidence_id); if (e) sources.add(e.source_type); }
+      const actions = store.listObjects<ActionItem>({ type: "action", theme_id: t.id });
+      const decisions = store.listObjects<Decision>({ type: "decision", theme_id: t.id });
+      const escalations = store.listObjects<Escalation>({ type: "escalation", theme_id: t.id });
+      const reqs = store.listObjects<DataRequest>({ type: "data_request", theme_id: t.id });
+      return {
+        ...t, counts, derived_from: { evidence: t.evidence.length, source_types: [...sources] },
+        attention: {
+          overdue: actions.filter((a) => !["completed", "dismissed"].includes(a.status) && a.due_at && a.due_at < now).length,
+          decisions_needed: decisions.filter((d) => d.status === "needed" || d.status === "pending_approval").length,
+          escalations: escalations.filter((e) => e.status === "potential" || e.status === "active").length,
+          open_requests: reqs.filter((r) => !["declined", "delivered"].includes(r.status)).length,
+        },
+      };
+    });
+    const pick = (type: ObjectType, status?: string[]) => store.listObjects({ type, status, limit: 50 }).map((o) => withEvidence(o as unknown as Record<string, unknown>));
+    const overdue = (store.listObjects<ActionItem>({ type: "action" }).filter((a) => !["completed", "dismissed"].includes(a.status) && a.due_at && a.due_at < now)).map((o) => withEvidence(o as unknown as Record<string, unknown>));
+    return {
+      generated_at: summary?.generated_at, narrative: summary?.sections.find((s) => s.heading === "Highlights")?.narrative,
+      coverage: summary?.coverage, backend: { name: rt.backend.name, degraded: rt.degraded },
+      attention: { decisions_needed: pick("decision", ["needed", "pending_approval"]), escalations: pick("escalation", ["potential", "active"]), overdue_actions: overdue, recommendations: pick("recommendation", ["proposed"]), open_data_requests: pick("data_request", ["identified", "submitted", "accepted", "in_progress"]) },
+      buckets: themes,
+      metrics: store.listObjects<BusinessMetric>({ type: "metric", limit: 8 }),
+      upcoming: store.listEvidence({ since: now, until: daysAgo(-14).toISOString() }).filter((e) => e.source_type === "calendar_event").map((e) => evidenceView(e)),
+      data_request_endpoint: drCfg().endpoint_url || null,
+    };
+  });
+
   /* ---- feedback ---- */
   app.post("/api/feedback", async (req, reply) => {
     const body = z.object({ object_type: z.string(), object_id: z.string(), kind: FeedbackKind, payload: z.record(z.string(), z.unknown()).optional() }).parse(req.body);
@@ -182,7 +246,7 @@ export function createApp(rt: Runtime): FastifyInstance {
   /* ---- settings ---- */
   const sanitized = () => {
     const a = rt.config.app;
-    return { user: a.user, retention: a.retention, enabled_sources: a.enabled_sources, summaries: a.summaries, themes: a.themes, terminology: a.terminology, important_roles: a.important_roles, intelligence: { backend: a.intelligence.backend, copilot: { command: a.intelligence.copilot.command, model: a.intelligence.copilot.model } }, server: a.server, logging: a.logging };
+    return { user: a.user, retention: a.retention, enabled_sources: a.enabled_sources, summaries: a.summaries, themes: a.themes, terminology: a.terminology, important_roles: a.important_roles, intelligence: { backend: a.intelligence.backend, copilot: { command: a.intelligence.copilot.command, model: a.intelligence.copilot.model } }, data_requests: { endpoint_url: a.data_requests.endpoint_url, method: a.data_requests.method, default_owner: a.data_requests.default_owner, has_headers: Object.keys(a.data_requests.headers).length > 0 }, server: a.server, logging: a.logging };
   };
   app.get("/api/settings", async () => ({ config: sanitized(), paths: rt.paths, warnings: rt.warnings, docs_inside_repo: false }));
   app.put("/api/settings", async (req) => {
@@ -192,6 +256,7 @@ export function createApp(rt: Runtime): FastifyInstance {
       summaries: z.object({ daily: z.boolean(), weekly: z.boolean(), monthly: z.boolean(), quarterly: z.boolean() }).partial().optional(),
       themes: z.object({ auto_discover: z.boolean(), pinned: z.array(z.string()) }).partial().optional(),
       enabled_sources: z.record(z.string(), z.boolean()).optional(),
+      data_requests: z.object({ endpoint_url: z.string(), method: z.enum(["POST", "PUT"]), default_owner: z.string() }).partial().optional(),
     }).parse(req.body);
     const a = rt.config.app;
     if (body.user) Object.assign(a.user, body.user);
@@ -199,6 +264,7 @@ export function createApp(rt: Runtime): FastifyInstance {
     if (body.summaries) Object.assign(a.summaries, body.summaries);
     if (body.themes) Object.assign(a.themes, body.themes);
     if (body.enabled_sources) Object.assign(a.enabled_sources, body.enabled_sources);
+    if (body.data_requests) Object.assign(a.data_requests, body.data_requests);
     saveAppConfig(rt.paths, a);
     return { ok: true, config: sanitized(), restart_required: !!body.enabled_sources };
   });
@@ -216,7 +282,7 @@ export function createApp(rt: Runtime): FastifyInstance {
   /* ---- static UI ---- */
   const dist = uiDist();
   if (dist) {
-    app.register(fastifyStatic, { root: dist, prefix: "/", wildcard: false });
+    app.register(fastifyStatic, { root: dist, prefix: "/", wildcard: true, index: ["index.html"] });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith("/api/")) return reply.code(404).send({ error: "not found" });
       return reply.sendFile("index.html");

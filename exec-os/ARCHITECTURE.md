@@ -449,6 +449,21 @@ Accept / Modify / Dismiss lifecycle.
 
 ## 7. UI information architecture
 
+Primary navigation is a strict drill-down; every element at a level links to the next level:
+
+```
+Level 1  Executive   attention counts · narrative · buckets (themes) · metrics · upcoming
+Level 2  Bucket      what changed · current state · items grouped by type · evidence behind the bucket · Request data (bucket)
+Level 3  Item        why am I seeing this · fields · evidence rows · data requests on the item · related · history · corrections · Request data (item)
+Level 4  Evidence    retained source text · open-in-source (only if the source supplied a URL) · items derived from it
+```
+
+Data requests raised at levels 2 and 3 go to `POST /api/data-requests`, are persisted as
+`DataRequest` objects with `scope: bucket | item`, and are forwarded to the configured intake
+endpoint (`data_requests.endpoint_url`) when one exists. Delivery status is recorded on the object.
+
+The secondary screens ("More" menu):
+
 ```
 Home / Executive Brief   [Daily | Weekly | Monthly]  Needs attention · What changed · Key themes · Recommendations · Upcoming · Coverage
 Themes                   cards (pinned + discovered) → theme detail (state, signals, objects, evidence)

@@ -144,7 +144,7 @@ export function reconcileObservations(store: Store, observations: Observation[],
         id = newId("dreq");
         const kinds = ["analysis", "metric", "dashboard", "data_pull", "experiment", "forecast", "engineering", "powerbi"] as const;
         const k = (kinds as readonly string[]).includes(obs.request_kind ?? "") ? (obs.request_kind as typeof kinds[number]) : "analysis";
-        created = { ...base, id, request: obs.title, requested_by: obs.owner, kind: k, status: "identified" } satisfies DataRequest;
+        created = { ...base, id, request: obs.title, requested_by: obs.owner, kind: k, status: "identified", scope: "detected", priority: "medium", origin: "extracted", delivery: { status: "not_configured" } } satisfies DataRequest;
         break;
       }
       case "metric": {

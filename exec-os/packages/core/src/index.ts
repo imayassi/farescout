@@ -23,4 +23,5 @@ export * from "./intelligence/pipeline/rules.js";
 export * from "./intelligence/pipeline/summaries.js";
 export * from "./intelligence/pipeline/ask.js";
 export * from "./intelligence/pipeline/feedback.js";
+export * from "./intelligence/pipeline/requests.js";
 export * from "./sync/orchestrator.js";

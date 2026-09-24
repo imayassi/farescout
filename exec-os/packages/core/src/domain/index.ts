@@ -185,12 +185,30 @@ export const Recommendation = z.object({
 });
 export type Recommendation = z.infer<typeof Recommendation>;
 
+export const DataRequestKind = z.enum(["analysis", "metric", "dashboard", "data_pull", "experiment", "forecast", "engineering", "powerbi"]);
 export const DataRequest = z.object({
   ...Base,
   request: z.string(),
   requested_by: z.string().optional(),
-  kind: z.enum(["analysis", "metric", "dashboard", "data_pull", "experiment", "forecast", "engineering", "powerbi"]),
-  status: z.enum(["identified", "accepted", "declined"]).default("identified"),
+  owner: z.string().optional(),          // who is expected to fulfil it (e.g. data & analytics lead)
+  kind: DataRequestKind,
+  status: z.enum(["identified", "accepted", "declined", "submitted", "in_progress", "delivered"]).default("identified"),
+  /** Where the request was raised: a whole bucket (theme) or a single item inside it. */
+  scope: z.enum(["bucket", "item", "detected"]).default("detected"),
+  object_type: z.string().optional(),
+  object_id: z.string().optional(),
+  priority: z.enum(["low", "medium", "high"]).default("medium"),
+  needed_by: z.string().optional(),
+  notes: z.string().optional(),
+  origin: z.enum(["extracted", "user"]).default("extracted"),
+  delivery: z.object({
+    status: z.enum(["not_configured", "delivered", "failed", "pending"]).default("not_configured"),
+    endpoint: z.string().optional(),
+    at: z.string().optional(),
+    response_status: z.number().optional(),
+    error: z.string().optional(),
+    external_id: z.string().optional(),
+  }).default({}),
 });
 export type DataRequest = z.infer<typeof DataRequest>;
 
